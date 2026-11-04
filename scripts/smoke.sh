@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# End-to-end smoke test: a fake OpenAI-compatible server, the real shiyi
-# binary, a real data directory and real ripgrep.
+# End-to-end smoke test: a fake OpenAI-compatible model server, the real shiyi
+# binary, a real data directory and real ripgrep. No network, no API key.
+#
+# Builds the binary into the repository root, runs it against a throwaway data
+# directory, and checks the whole acceptance surface: health, record,
+# unrecognized, query with citations, the "writes nothing" rules, and the
+# error paths.
+#
 set -uo pipefail
 
-ROOT=/home/mioto/workspace/me/shiyi
-export GOENV=$ROOT/.goenv/env
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+export GOENV=${GOENV:-$ROOT/.goenv/env}
 WORK=$(mktemp -d)
 trap 'kill $LLM_PID $SHIYI_PID 2>/dev/null; rm -rf "$WORK"' EXIT
 

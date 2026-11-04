@@ -495,6 +495,15 @@ go test ./... -race
 go test ./... -race -run Frozen
 ```
 
+### 端到端冒烟
+
+用假模型 + 真实二进制 + 真实 `rg` + 临时数据目录，跑一遍记录、无法识别、
+带引用的查询、错误路径和 Web 页面。不需要网络，也不需要 API key：
+
+```bash
+bash scripts/smoke.sh
+```
+
 ### 文档一致性检查
 
 `README.md`、`Dockerfile` 和配置文件里的路径、环境变量名、CLI 子命令、错误码
