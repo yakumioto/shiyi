@@ -82,26 +82,26 @@ func parseArgs(args []string) (Options, error) {
 		}
 	}
 
+	// Asking for help always wins: the user wants to read the usage, not
+	// to be told off about an option they did not mean to pass.
+	if opts.Mode == ModeHelp {
+		return Options{Mode: ModeHelp, Server: defaultServer}, nil
+	}
+
 	if err := validateServer(opts.Server); err != nil {
 		return opts, err
 	}
 
 	switch {
 	case len(positional) == 0:
-		if opts.Mode != ModeHelp {
-			opts.Mode = ModeREPL
-		}
+		opts.Mode = ModeREPL
 	case positional[0] == "serve":
 		if len(positional) > 1 {
 			return opts, fmt.Errorf("serve 不接受额外参数: %q", strings.Join(positional[1:], " "))
 		}
-		if opts.Mode != ModeHelp {
-			opts.Mode = ModeServe
-		}
+		opts.Mode = ModeServe
 	default:
-		if opts.Mode != ModeHelp {
-			opts.Mode = ModeSend
-		}
+		opts.Mode = ModeSend
 		opts.Text = strings.Join(positional, " ")
 	}
 

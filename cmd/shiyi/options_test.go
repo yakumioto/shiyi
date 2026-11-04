@@ -60,6 +60,11 @@ func TestParseArgs(t *testing.T) {
 			want: Options{Mode: ModeHelp, Server: defaultServer},
 		},
 		{
+			name: "help 优先于无效的服务地址",
+			args: []string{"--help", "--server", "坏地址"},
+			want: Options{Mode: ModeHelp, Server: defaultServer},
+		},
+		{
 			name:    "serve 不接受额外参数",
 			args:    []string{"serve", "多余"},
 			wantErr: true,
