@@ -10,8 +10,10 @@ import (
 )
 
 // maxLineBytes bounds one JSONL line. The API caps a request body at 1 MiB, so
-// a record can never need much more than that.
-const maxLineBytes = 2 << 20
+// a record can never need much more than that, but its JSON encoding can be
+// twice as long when the original text holds characters that have to be
+// escaped.
+const maxLineBytes = 8 << 20
 
 // recover scans every shard at start-up, isolating an incomplete tail and
 // restoring the clock from the newest record.
@@ -68,7 +70,41 @@ func (s *FS) scanShard(path string) error {
 	if len(tail) == 0 {
 		return nil
 	}
+
+	// The tail is a complete record whose newline was lost: the write
+	// reached the disk, only the last byte did not. It is a real memory
+	// entry and has to be kept, or the record would be silently lost.
+	if s.validLine(tail) {
+		s.observe(tail)
+		return appendNewline(path)
+	}
+
+	// The tail is a half-written line. It moves to the corrupt directory
+	// and the shard keeps its complete lines.
 	return s.isolateTail(path, tail, int64(completeEnd))
+}
+
+// appendNewline gives a shard back its missing trailing newline.
+//
+// Without it the next append would join the last record and the new one
+// into a single unreadable line.
+func appendNewline(path string) error {
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("store: open shard %s: %w", filepath.Base(path), err)
+	}
+	if _, err := file.Write([]byte{'\n'}); err != nil {
+		file.Close()
+		return fmt.Errorf("store: finish shard %s: %w", filepath.Base(path), err)
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return fmt.Errorf("store: flush shard %s: %w", filepath.Base(path), err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("store: close shard %s: %w", filepath.Base(path), err)
+	}
+	return nil
 }
 
 // isolateTail moves tail into the corrupt directory and truncates the shard

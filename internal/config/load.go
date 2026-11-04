@@ -144,6 +144,16 @@ func LoadFile(path string) (Config, error) {
 		return Config{}, err
 	}
 
+	// The data directory is resolved here, once, so that every consumer
+	// sees the same path. A "~" that is left in place would be read as a
+	// directory named "~" relative to the working directory, and the
+	// records would end up in a different place than the queries read.
+	expandedDir, err := ExpandHome(cfg.DataDir)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.DataDir = expandedDir
+
 	return cfg, nil
 }
 
