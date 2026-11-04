@@ -86,6 +86,14 @@ func (c Config) Validate() error             // 必填项、shard 枚举、目�
 func (c Config) APIKey() (string, error)     // 从 Answer.APIKeyEnv 指向的环境变量读
 func (c Config) AuthToken() string           // 从 AuthTokenEnv 指向的环境变量读；未设置返回 ""
 
+// internal/store
+// 分片粒度用字符串传入，避免 internal/store 依赖 internal/config。
+// 取值必须是 "monthly" / "weekly" / "daily"。
+func New(dataDir string, shard string) (*Store, error)
+
+// internal/classify
+func New(client llm.Client, model string, temperature float64) Judge
+
 // internal/llm
 type Options struct {
     BaseURL     string
@@ -155,6 +163,11 @@ cmd/shiyi → 全部
 - `internal/store` **不** import `internal/config`。
 - `internal/answer` **不** import `internal/httpapi`。
 - `internal/web` **不** import `internal/httpapi`。
+
+## 分片粒度字符串
+
+`internal/store` 不依赖 `internal/config`，所以分片粒度以字符串传递。
+合法值：`"monthly"`、`"weekly"`、`"daily"`。非法值 → `store.New` 返回错误。
 
 ## 错误映射表（唯一权威）
 
