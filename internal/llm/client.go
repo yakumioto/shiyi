@@ -1,11 +1,3 @@
-// Package-level note on who owns the model and the temperature:
-//
-// A caller that names a model in its Request owns the request: the model and
-// the temperature in the Request are sent as they are. A Request without a
-// model is filled in from the Options the client was built with.
-//
-// This keeps the temperature a caller passes to classify.New or answer.New
-// effective, while a bare client still behaves like a configured default.
 package llm
 
 import (
@@ -23,6 +15,15 @@ import (
 // maxResponseBytes bounds how much of a provider answer is read. A model that
 // streams an endless body must not be able to exhaust the process memory.
 const maxResponseBytes = 8 << 20 // 8 MiB
+
+// Who owns the model and the temperature:
+//
+// A caller that names a model in its Request owns the request: the model and
+// the temperature in the Request are sent as they are. A Request without a
+// model is filled in from the Options the client was built with.
+//
+// This keeps the temperature a caller passes to classify.New or answer.New
+// effective, while a bare client still behaves like a configured default.
 
 // Options describes one OpenAI-compatible model endpoint.
 //
