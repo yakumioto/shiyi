@@ -490,3 +490,66 @@ func TestAppendRejectsCancelledContext(t *testing.T) {
 		t.Fatalf("a cancelled Append must not write: %v", files)
 	}
 }
+
+// TestShardNameAtMonthBoundary covers the UTC month boundary: the last instant
+// of one month and the first instant of the next land in different shards.
+func TestShardNameAtMonthBoundary(t *testing.T) {
+	cases := []struct {
+		name  string
+		shard string
+		when  time.Time
+		want  string
+	}{
+		{
+			name:  "last nanosecond of October",
+			shard: store.ShardMonthly,
+			when:  time.Date(2026, 10, 31, 23, 59, 59, 999999999, time.UTC),
+			want:  "2026-10.jsonl",
+		},
+		{
+			name:  "first instant of November",
+			shard: store.ShardMonthly,
+			when:  time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC),
+			want:  "2026-11.jsonl",
+		},
+		{
+			name:  "year boundary is also a month boundary",
+			shard: store.ShardMonthly,
+			when:  time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+			want:  "2027-01.jsonl",
+		},
+		{
+			name:  "day granularity splits at midnight",
+			shard: store.ShardDaily,
+			when:  time.Date(2026, 11, 4, 23, 59, 59, 999999999, time.UTC),
+			want:  "2026-11-04.jsonl",
+		},
+		{
+			name:  "next day is a different shard",
+			shard: store.ShardDaily,
+			when:  time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC),
+			want:  "2026-11-05.jsonl",
+		},
+		{
+			name:  "weekly granularity uses the ISO week",
+			shard: store.ShardWeekly,
+			when:  time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC),
+			want:  "2026-W44.jsonl",
+		},
+		{
+			name:  "a local offset still shards by UTC",
+			shard: store.ShardMonthly,
+			// 2026-11-01 07:00 at +08:00 is 2026-10-31 23:00 UTC.
+			when: time.Date(2026, 11, 1, 7, 0, 0, 0, time.FixedZone("CST", 8*3600)),
+			want: "2026-10.jsonl",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := store.ShardName(tc.shard, store.NewTime(tc.when))
+			if got != tc.want {
+				t.Fatalf("ShardName(%q, %s) = %q, want %q", tc.shard, tc.when, got, tc.want)
+			}
+		})
+	}
+}

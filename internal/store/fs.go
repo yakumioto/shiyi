@@ -142,10 +142,16 @@ func (s *FS) nextTime() Time {
 	return now
 }
 
-// shardName returns the shard file name for t.
+// shardName returns the shard file name for t under this store's granularity.
 func (s *FS) shardName(t Time) string {
+	return ShardName(s.shard, t)
+}
+
+// ShardName returns the file name a record at t belongs to, under the given
+// granularity. All boundaries are UTC.
+func ShardName(shard string, t Time) string {
 	utc := t.UTC()
-	switch s.shard {
+	switch shard {
 	case ShardDaily:
 		return utc.Format("2006-01-02") + shardSuffix
 	case ShardWeekly:
