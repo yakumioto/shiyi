@@ -65,6 +65,11 @@ func TestParseArgs(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "双横线之后的文本当作消息",
+			args: []string{"--", "-5度"},
+			want: Options{Mode: ModeSend, Server: defaultServer, Text: "-5度"},
+		},
+		{
 			name:    "未知选项",
 			args:    []string{"--unknown"},
 			wantErr: true,

@@ -39,7 +39,7 @@ const usageText = `shiyi — Chat-first 的个人记忆系统
 用法:
   shiyi                    进入交互式会话，逐行发送消息，用 /quit 退出
   shiyi <文本>             发送一条消息并打印结果
-  shiyi serve              启动本地服务
+  shiyi serve              启动本地服务，监听地址取自配置文件
   shiyi --help             显示本帮助
 
 选项:
@@ -47,6 +47,8 @@ const usageText = `shiyi — Chat-first 的个人记忆系统
 
 交互式会话:
   每行单独发送，不携带任何上下文；空行忽略；/quit 或 /exit 退出。
+
+以 - 开头的文本用 -- 隔开，例如 shiyi -- -5度。
 `
 
 // parseArgs turns a command line into Options.
