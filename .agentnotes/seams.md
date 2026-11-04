@@ -76,6 +76,86 @@ var ErrInvalidCitation error   // → 502 invalid_citation
 const NoMatchAnswer = "没有找到相关记忆"
 ```
 
+## 构造器签名（冻结，下游票按此依赖）
+
+```go
+// internal/config
+func Load() (Config, error)                 // 读 SHIYI_CONFIG 或默认路径；套用环境变量覆盖与默认值
+func LoadFile(path string) (Config, error)
+func (c Config) Validate() error             // 必填项、shard 枚举、目录可写、rg 可执行、api_key_env 存在
+func (c Config) APIKey() (string, error)     // 从 Answer.APIKeyEnv 指向的环境变量读
+func (c Config) AuthToken() string           // 从 AuthTokenEnv 指向的环境变量读；未设置返回 ""
+
+// internal/llm
+type Options struct {
+    BaseURL     string
+    Model       string
+    APIKey      string
+    Timeout     time.Duration
+    Temperature float64
+    HTTPClient  *http.Client   // 可为 nil
+    Logger      *slog.Logger   // 可为 nil
+}
+func New(opts Options) *Client
+func NewFakeClient(turns ...*Response) *FakeClient
+func (f *FakeClient) SetError(err error)
+func (f *FakeClient) Requests() []Request
+func TextResponse(content string) *Response
+func ToolCallResponse(id, name, args string) *Response
+
+// internal/search
+func New(dataDir string) *Searcher
+
+// internal/answer
+type Budget struct {
+    MaxSearchCalls int
+    MaxRecords     int
+    AnswerTimeout  time.Duration
+}
+func New(client llm.Client, searcher search.Searcher, model string, temperature float64, budget Budget) Answerer
+
+// internal/httpapi
+type Deps struct {
+    Config   config.Config
+    Judge    classify.Judge
+    Store    store.Store
+    Answerer answer.Answerer
+    Logger   *slog.Logger
+}
+func New(d Deps) (*Server, error)
+func (s *Server) Handler() http.Handler
+func (s *Server) HandlerWithWeb(web http.Handler) http.Handler
+
+// internal/web
+func Handler() http.Handler
+```
+
+`Request` 上新增（对冻结接缝的增补，Lead 已批准）：
+```go
+type ResponseFormat struct{ Type string `json:"type"` }
+// Request.ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+```
+
+## 包依赖方向（禁止循环）
+
+```
+config  →  (无内部依赖)
+llm     →  (无内部依赖)
+api     →  (无内部依赖)
+store   →  (无内部依赖)
+classify → llm
+search  →  store
+answer  →  llm, search, store
+httpapi →  api, config, classify, store, answer, llm
+web     →  (无内部依赖)
+cmd/shiyi → 全部
+```
+
+- `internal/search` **不** import `internal/config`（只收 `dataDir` 字符串）。
+- `internal/store` **不** import `internal/config`。
+- `internal/answer` **不** import `internal/httpapi`。
+- `internal/web` **不** import `internal/httpapi`。
+
 ## 错误映射表（唯一权威）
 
 | 底层错误 | HTTP | code |
