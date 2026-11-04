@@ -469,52 +469,59 @@ CLI **不做**本地缓存、不做历史记录、不做多轮上下文。
   装不上就用容器：`docker run --rm --entrypoint rg shiyi:latest --version`。
 - 依赖已经 vendor 进仓库，构建和测试**不需要网络**，也不需要 API key。
 
-### Makefile
+### 门禁
+
+**`make check` 是唯一的门禁。** 它的步骤与 CI 的测试任务逐条对应，再加两项
+CI 不跑的仓库自检。说「绿了」之前跑它：
+
+```bash
+make check
+```
+
+它依次执行：
+
+| 步骤 | 内容 |
+| --- | --- |
+| `prereqs` | 确认 `rg` 在 PATH 里 |
+| `verify-vendor` | `go mod verify` + `go mod vendor` + 确认 `vendor/` 没有漂移 |
+| `vet` | `go vet ./...` |
+| `compile` | `go build ./...` |
+| `test` | `go test ./... -race -count=1` |
+| `test-frozen` | 只跑冻结测试集 |
+| `smoke` | 真实二进制 + 假模型的端到端冒烟 |
+| `readme-check` | 文档与配置的交叉一致性 |
+
+### 其他 Makefile 目标
 
 ```bash
 make build         # 编译出 ./shiyi
-make test          # go test ./... -race
+make run           # 编译并启动服务
+make test          # go test ./... -race -count=1
 make vet           # go vet ./...
 make test-frozen   # 只跑冻结测试集
+make image         # 构建容器镜像
+make image-check   # 构建镜像并在容器里验 rg 与 /healthz（CI 的容器任务）
 make fmt           # go fmt ./...
-make run           # 编译并启动服务
 make clean         # 删掉 ./shiyi
 ```
 
-### 门禁
+`make test`、`make vet`、`make test-frozen`、`make smoke`、`make readme-check`
+都可以单独跑——它们都在 `make check` 里，单独跑只用于定位失败。
 
-```bash
-go build ./...
-go vet ./...
-go test ./... -race
-```
+冻结测试集（`testdata/frozen/`）是 `go test ./... -race` 的一部分。
 
-冻结测试集（`testdata/frozen/`）是 `go test ./... -race` 的一部分，也可以单独跑：
+### 单独跑一个脚本
 
-```bash
-go test ./... -race -run Frozen
-```
-
-### 端到端冒烟
-
-用假模型 + 真实二进制 + 真实 `rg` + 临时数据目录，跑一遍记录、无法识别、
-带引用的查询、错误路径和 Web 页面。不需要网络，也不需要 API key：
+`scripts/smoke.sh` 会自己编译二进制到临时目录，不需要先 `make build`，
+也不需要网络或 API key：
 
 ```bash
 bash scripts/smoke.sh
 ```
 
-### 文档一致性检查
-
-`README.md`、`Dockerfile` 和配置文件里的路径、环境变量名、CLI 子命令、错误码
-很容易互相漂移。有一个脚本专门交叉检查它们：
-
-```bash
-bash docs/check-readme.sh
-```
-
-它不依赖网络，也不依赖 Go 工具链；任何一处漂移都会打印出 `[FAIL]` 行并以非 0 退出。
-改了上面三个文件中的任何一个之后，记得跑一遍。
+`docs/check-readme.sh` 交叉检查 `README.md`、`Dockerfile`、示例配置、错误码与
+CLI 子命令。它不依赖网络，也不依赖 Go 工具链；任何一处漂移都会打印 `[FAIL]`
+并以非 0 退出。改了这些文件之后跑一遍。
 
 ### 部署相关的进一步说明
 

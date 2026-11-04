@@ -3,14 +3,8 @@
 .gitignore
 .worktrees
 
-# 规格与代理笔记：不属于运行时产物
+# 规格：不属于运行时产物
 .scratch
-.agentnotes
-
-# Go 工具链缓存（在仓库内，不该进镜像）
-.gocache
-.gomodcache
-.goenv
 
 # 构建产物与测试夹具
 shiyi

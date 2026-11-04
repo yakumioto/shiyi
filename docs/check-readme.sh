@@ -252,7 +252,7 @@ for probe in cmd/shiyi vendor; do
 		pass ".dockerignore 没有排除 $probe"
 	fi
 done
-for d in '.git' '.scratch' '.agentnotes' '.worktrees' '.gocache' '.gomodcache' '.goenv' 'testdata'; do
+for d in '.git' '.scratch' '.worktrees' 'testdata'; do
 	if grep -qE "^[[:space:]]*${d}(/|\$)" "$DOCKERIGNORE"; then
 		pass ".dockerignore 排除了 $d"
 	else
@@ -380,7 +380,7 @@ done
 
 section "6. Makefile 目标与门禁命令"
 
-for t in build test vet test-frozen; do
+for t in check build test vet test-frozen; do
 	if grep -qE "^${t}:" Makefile; then
 		pass "Makefile 有 ${t} 目标"
 	else

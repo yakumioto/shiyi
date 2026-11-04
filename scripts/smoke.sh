@@ -10,12 +10,20 @@
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-export GOENV=${GOENV:-$ROOT/.goenv/env}
 WORK=$(mktemp -d)
+BINARY="$WORK/shiyi"
 trap 'kill $LLM_PID $SHIYI_PID 2>/dev/null; rm -rf "$WORK"' EXIT
 
 DATA="$WORK/data"
 mkdir -p "$DATA"
+
+# Build the binary the script is about to exercise, into the throwaway
+# directory, so a checkout needs nothing prepared beforehand.
+echo "== building =="
+if ! (cd "$ROOT" && go build -o "$BINARY" ./cmd/shiyi); then
+  echo "smoke: failed to build the binary" >&2
+  exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # A fake model server. It decides record/query/unrecognized from the prompt it
@@ -135,7 +143,7 @@ EOF
 export SHIYI_CONFIG="$WORK/config.toml"
 export SHIYI_TEST_KEY="test-key-value"
 
-"$ROOT/shiyi" serve > "$WORK/serve.log" 2>&1 &
+"$BINARY" serve > "$WORK/serve.log" 2>&1 &
 SHIYI_PID=$!
 sleep 1.5
 
