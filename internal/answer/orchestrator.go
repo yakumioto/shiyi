@@ -36,10 +36,11 @@ func DefaultBudget() Budget {
 
 // answerer answers queries against the records a searcher finds.
 type answerer struct {
-	client   llm.Client
-	searcher search.Searcher
-	model    string
-	budget   Budget
+	client      llm.Client
+	searcher    search.Searcher
+	model       string
+	temperature float64
+	budget      Budget
 }
 
 // New returns an Answerer that searches with searcher and answers with
@@ -48,7 +49,7 @@ type answerer struct {
 // The model name is the one the answering endpoint is configured with. A
 // budget field left at zero falls back to the default, so that a zero
 // value cannot silently mean "no searching at all".
-func New(client llm.Client, searcher search.Searcher, model string, budget Budget) Answerer {
+func New(client llm.Client, searcher search.Searcher, model string, temperature float64, budget Budget) Answerer {
 	defaults := DefaultBudget()
 	if budget.MaxSearchCalls <= 0 {
 		budget.MaxSearchCalls = defaults.MaxSearchCalls
@@ -60,10 +61,11 @@ func New(client llm.Client, searcher search.Searcher, model string, budget Budge
 		budget.AnswerTimeout = defaults.AnswerTimeout
 	}
 	return &answerer{
-		client:   client,
-		searcher: searcher,
-		model:    model,
-		budget:   budget,
+		client:      client,
+		searcher:    searcher,
+		model:       model,
+		temperature: temperature,
+		budget:      budget,
 	}
 }
 
@@ -73,8 +75,11 @@ func New(client llm.Client, searcher search.Searcher, model string, budget Budge
 // budget allows, and the records it gets back are the only records the
 // answer may cite.
 func (a *answerer) Answer(ctx context.Context, query string) (Result, error) {
-	ctx, cancel := context.WithTimeout(ctx, a.budget.AnswerTimeout)
-	defer cancel()
+	// The search phase is bounded by the answering budget. The request itself
+	// may live longer, which is what leaves room for the one final answer once
+	// the search phase runs out of time.
+	searchCtx, cancelSearch := context.WithTimeout(ctx, a.budget.AnswerTimeout)
+	defer cancelSearch()
 
 	s := &session{
 		answerer: a,
@@ -92,8 +97,14 @@ func (a *answerer) Answer(ctx context.Context, query string) (Result, error) {
 		// from the evidence it already has.
 		withTools := !s.exhausted
 
-		resp, err := a.complete(ctx, s, withTools)
+		resp, err := a.complete(searchCtx, s, withTools)
 		if err != nil {
+			// Running out of the answering budget is a spent budget, not a
+			// broken provider: the query still deserves an answer built from
+			// whatever evidence was gathered before the deadline.
+			if ctx.Err() == nil && errors.Is(err, llm.ErrUnavailable) && searchCtx.Err() != nil {
+				return a.answerNow(ctx, s)
+			}
 			return Result{}, err
 		}
 		choice, err := resp.Choice()
@@ -120,8 +131,14 @@ func (a *answerer) Answer(ctx context.Context, query string) (Result, error) {
 			ToolCalls: choice.Message.ToolCalls,
 		})
 		for _, call := range choice.Message.ToolCalls {
-			text, err := s.runTool(ctx, call)
+			text, err := s.runTool(searchCtx, call)
 			if err != nil {
+				// The search phase deadline can expire inside a search.
+				// The request is still alive, so fall back to the answer
+				// that the evidence so far supports.
+				if ctx.Err() == nil && searchCtx.Err() != nil {
+					return a.answerNow(ctx, s)
+				}
 				return Result{}, err
 			}
 			s.messages = append(s.messages, llm.Message{
@@ -134,13 +151,38 @@ func (a *answerer) Answer(ctx context.Context, query string) (Result, error) {
 	}
 }
 
+// answerNow produces the answer of a query whose search budget is spent.
+//
+// It asks the model once more, without the tool, over the evidence gathered so
+// far, and reports the answer as partial. When nothing was found at all, the
+// fixed no-match answer replaces the model's text.
+func (a *answerer) answerNow(ctx context.Context, s *session) (Result, error) {
+	s.exhausted = true
+
+	// The search phase was bounded by the answering budget; this last call
+	// gets a fresh slice of it, so a provider that never answers cannot hold
+	// the request open forever.
+	nowCtx, cancel := context.WithTimeout(ctx, a.budget.AnswerTimeout)
+	defer cancel()
+
+	resp, err := a.complete(nowCtx, s, false)
+	if err != nil {
+		return Result{}, err
+	}
+	choice, err := resp.Choice()
+	if err != nil {
+		return Result{}, err
+	}
+	return s.conclude(choice.Message.Content)
+}
+
 // complete performs one round trip with the model. The search tool is
 // offered unless the search budget is spent.
 func (a *answerer) complete(ctx context.Context, s *session, withTools bool) (*llm.Response, error) {
 	req := llm.Request{
 		Model:       a.model,
 		Messages:    s.messages,
-		Temperature: 0,
+		Temperature: a.temperature,
 	}
 	if withTools {
 		req.Tools = []llm.Tool{searchTool}
@@ -265,6 +307,14 @@ func (s *session) runTool(ctx context.Context, call llm.ToolCall) (string, error
 		found = append(found, toolRecord{Time: key, Content: record.Content})
 	}
 	return encodeToolRecords(found), nil
+}
+
+// conclude turns the final text of a budget-exhausted query into a Result.
+func (s *session) conclude(content string) (Result, error) {
+	if len(s.evidence) == 0 {
+		return Result{Answer: NoMatchAnswer, Citations: nil, Status: StatusNoMatch}, nil
+	}
+	return s.finish(content, StatusBudgetExhausted)
 }
 
 // finish turns the final text of the model into the result.

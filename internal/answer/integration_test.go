@@ -52,7 +52,7 @@ func TestAnswerWithTheRealSearcher(t *testing.T) {
 		finalResponse(answerJSON(t, "You drink coffee every morning.", tCoffee)),
 	}}
 
-	got, err := answer.New(client, search.New(dir), "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink in the morning?")
+	got, err := answer.New(client, search.New(dir), "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink in the morning?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestAnswerWithTheRealSearcherFindsNothing(t *testing.T) {
 		finalResponse("I believe you ride a bicycle."),
 	}}
 
-	got, err := answer.New(client, search.New(dir), "test-model", answer.DefaultBudget()).Answer(context.Background(), "Do I ride a bicycle?")
+	got, err := answer.New(client, search.New(dir), "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "Do I ride a bicycle?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestAnswerWithTheRealSearcherLeavesTheFilesAlone(t *testing.T) {
 		finalResponse(answerJSON(t, "You drink coffee.", "2026-11-01T10:00:00.000000000Z")),
 	}}
 
-	if _, err := answer.New(client, search.New(dir), "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?"); err != nil {
+	if _, err := answer.New(client, search.New(dir), "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?"); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 

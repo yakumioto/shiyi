@@ -81,14 +81,23 @@ func buildServer(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 		Logger:      logger,
 	})
 
-	memory, err := store.New(cfg.DataDir, string(cfg.Shard))
+	// The configured directory may start with "~", which only means the user's
+	// home directory once it has been expanded. Both the store and the search
+	// must see the same resolved path, otherwise a query would read a
+	// different directory from the one records are written to.
+	dataDir, err := cfg.ExpandedDataDir()
+	if err != nil {
+		return nil, fmt.Errorf("解析数据目录: %w", err)
+	}
+
+	memory, err := store.New(dataDir, string(cfg.Shard))
 	if err != nil {
 		return nil, fmt.Errorf("打开记忆存储: %w", err)
 	}
 
 	judge := classify.New(classifierClient, cfg.Classifier.Model, cfg.Classifier.Temperature)
-	searcher := search.New(cfg.DataDir)
-	answerer := answer.New(answerClient, searcher, cfg.Answer.Model, answer.Budget{
+	searcher := search.New(dataDir)
+	answerer := answer.New(answerClient, searcher, cfg.Answer.Model, cfg.Answer.Temperature, answer.Budget{
 		MaxSearchCalls: cfg.Budget.MaxSearchCalls,
 		MaxRecords:     cfg.Budget.MaxRecords,
 		AnswerTimeout:  cfg.Budget.AnswerTimeout,

@@ -81,7 +81,7 @@ func newAxHarness(t *testing.T, judgeTurns, answerTurns []*llm.Response) *axHarn
 		Config:   cfg,
 		Judge:    classify.New(judgeClient, "m", 0),
 		Store:    memory,
-		Answerer: answer.New(answerClient, search.New(dir), "m", answer.Budget{}),
+		Answerer: answer.New(answerClient, search.New(dir), "m", 0, answer.Budget{}),
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
@@ -307,7 +307,7 @@ func TestAcceptanceModelUnavailableWritesNothing(t *testing.T) {
 		Config:   cfg,
 		Judge:    classify.New(judge, "m", 0),
 		Store:    memory,
-		Answerer: answer.New(llm.NewFakeClient(), search.New(dir), "m", answer.Budget{}),
+		Answerer: answer.New(llm.NewFakeClient(), search.New(dir), "m", 0, answer.Budget{}),
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
@@ -492,7 +492,7 @@ func serve(t *testing.T, dir string, memory store.Store, judgeTurns, answerTurns
 		Config:   cfg,
 		Judge:    classify.New(llm.NewFakeClient(judgeTurns...), "m", 0),
 		Store:    memory,
-		Answerer: answer.New(llm.NewFakeClient(answerTurns...), search.New(dir), "m", answer.Budget{}),
+		Answerer: answer.New(llm.NewFakeClient(answerTurns...), search.New(dir), "m", 0, answer.Budget{}),
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {

@@ -23,7 +23,7 @@ func TestAnswerWithTheSharedFakeClient(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{record(t, tCoffee, "I drink coffee every morning")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestAnswerWithTheSharedFakeClientRunsOutOfTurns(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{record(t, tCoffee, "I drink coffee every morning")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}

@@ -125,8 +125,10 @@ func New(d Deps) (*Server, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /messages", s.handleMessages)
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
-	mux.HandleFunc("GET /{$}", s.handleWeb)
-	mux.HandleFunc("/", s.handleNotFound)
+	// Everything else belongs to the web interface when one is mounted. The
+	// web handler owns its whole path space (the page and its assets), so it
+	// is installed as the catch-all rather than at the root path alone.
+	mux.HandleFunc("/", s.handleWebOrNotFound)
 
 	s.handler = s.withRequestLog(mux)
 	return s, nil
@@ -134,17 +136,18 @@ func New(d Deps) (*Server, error) {
 
 // Handler returns the HTTP handler of the server.
 //
-// It serves POST /messages, GET /healthz and GET /; every other path
-// answers with 404 and the error shape of the API.
+// It serves POST /messages and GET /healthz; every other path answers with
+// 404 and the error shape of the API until a web interface is mounted.
 func (s *Server) Handler() http.Handler {
 	return s.handler
 }
 
-// HandlerWithWeb mounts web at GET / and returns the handler of the server.
+// HandlerWithWeb mounts the web interface and returns the handler of the
+// server.
 //
-// The web interface lives in its own package, so it is installed here
-// instead of being a dependency of the server. Mounting it is optional: the
-// server answers GET / with 404 until a web handler is mounted.
+// The web interface lives in its own package, so it is installed here instead
+// of being a dependency of the server. Mounting it is optional: the server
+// answers with 404 until a web handler is mounted.
 func (s *Server) HandlerWithWeb(web http.Handler) http.Handler {
 	s.mu.Lock()
 	s.web = web
@@ -161,8 +164,13 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// handleWeb serves the single page web interface.
-func (s *Server) handleWeb(w http.ResponseWriter, r *http.Request) {
+// handleWebOrNotFound serves the single page web interface, and answers with
+// 404 when no interface is mounted.
+//
+// The web handler owns its whole path space: it serves the page at / and its
+// assets (the stylesheet and the script) alongside it. A method the interface
+// does not accept is rejected by the interface itself.
+func (s *Server) handleWebOrNotFound(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	web := s.web
 	s.mu.RUnlock()
@@ -172,14 +180,6 @@ func (s *Server) handleWeb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	web.ServeHTTP(w, r)
-}
-
-// handleNotFound answers every path the server does not serve.
-//
-// The response keeps the shape of every other error response so that a
-// client never has to parse two different formats.
-func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
-	s.writeNotFound(w)
 }
 
 // writeNotFound answers with 404 and the error shape of the API.

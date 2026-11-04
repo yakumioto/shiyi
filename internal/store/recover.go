@@ -100,12 +100,33 @@ func lastNewlineIndex(content []byte) int {
 }
 
 // validLine reports whether line is a complete record.
+//
+// A record has exactly three fields and a time; anything else in a shard is
+// damage. Checking the field set here, rather than only that the JSON parses,
+// is what stops a half-formed line from passing the start-up scan and being
+// served later as if it were a memory.
 func (s *FS) validLine(line []byte) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(line, &fields); err != nil {
+		return false
+	}
+	if len(fields) != 3 {
+		return false
+	}
+	for _, name := range []string{"version", "content", "time"} {
+		if _, ok := fields[name]; !ok {
+			return false
+		}
+	}
+
 	var rec Record
 	if err := json.Unmarshal(line, &rec); err != nil {
 		return false
 	}
-	return rec.Version > 0
+	if rec.Version <= 0 {
+		return false
+	}
+	return !rec.Time.IsZero()
 }
 
 // observe folds one record into the newest-seen clock.

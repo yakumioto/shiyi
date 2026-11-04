@@ -211,3 +211,40 @@ func TestAnEmptyCitationListIsAnEmptyList(t *testing.T) {
 		t.Errorf("body = %q, want an empty citation list", raw)
 	}
 }
+
+// TestWebAssetsReachTheWebHandler checks that the web interface owns its whole
+// path space: the page is served at the root and its assets alongside it, not
+// swallowed by the API's 404.
+func TestWebAssetsReachTheWebHandler(t *testing.T) {
+	t.Parallel()
+
+	srv, _, _, _ := newServer(t, nil)
+
+	asset := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		_, _ = io.WriteString(w, "// "+r.URL.Path)
+	})
+	srv.HandlerWithWeb(asset)
+
+	server := httptest.NewServer(srv.Handler())
+	defer server.Close()
+
+	for _, assetPath := range []string{"/app.js", "/style.css", "/nested/page"} {
+		resp, err := server.Client().Get(server.URL + assetPath)
+		if err != nil {
+			t.Fatalf("get %s: %v", assetPath, err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatalf("read body of %s: %v", assetPath, err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200; the web handler owns the whole path space", assetPath, resp.StatusCode)
+		}
+		if want := "// " + assetPath; string(body) != want {
+			t.Errorf("GET %s body = %q, want %q", assetPath, body, want)
+		}
+	}
+}

@@ -165,7 +165,7 @@ func TestAnswerFindsAndCites(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{coffee, tea}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestAnswerOffersTheSearchToolEveryRound(t *testing.T) {
 	}}
 	searcher := newFakeSearcher()
 
-	if _, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "q"); err != nil {
+	if _, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "q"); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 
@@ -217,7 +217,7 @@ func TestAnswerSendsThePromptAndTheQuery(t *testing.T) {
 	client := &fakeLLM{responses: []*llm.Response{finalResponse(answerJSON(t, "Nothing."))}}
 	searcher := newFakeSearcher()
 
-	if _, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "Where do I live?"); err != nil {
+	if _, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "Where do I live?"); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 
@@ -243,7 +243,7 @@ func TestAnswerReturnsNoMatchWithoutEvidence(t *testing.T) {
 	}}
 	searcher := newFakeSearcher()
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What is the capital of France?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What is the capital of France?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestAnswerRefusesACitationOutsideTheEvidence(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{record(t, tFound, "I drink coffee every morning")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err == nil {
 		t.Fatalf("Answer returned %+v, want an error", got)
 	}
@@ -295,7 +295,7 @@ func TestAnswerRefusesACitationFromAnotherRound(t *testing.T) {
 	searcher.results["coffee"] = []store.Record{record(t, tFirst, "I drink coffee every morning")}
 	searcher.results["tea"] = []store.Record{record(t, tSecond, "I drink tea in the evening")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err == nil {
 		t.Fatalf("Answer returned %+v, want an error", got)
 	}
@@ -317,7 +317,7 @@ func TestAnswerAcceptsACitationFromAnotherRound(t *testing.T) {
 	searcher.results["coffee"] = []store.Record{record(t, tFirst, "I drink coffee every morning")}
 	searcher.results["tea"] = []store.Record{record(t, tSecond, "I drink tea in the evening")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestAnswerStopsSearchingWhenTheBudgetIsSpent(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{record(t, tCoffee, "I drink coffee every morning")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -389,7 +389,7 @@ func TestAnswerRefusesAnInvalidCitationWhenTheBudgetIsSpent(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{record(t, tCoffee, "I drink coffee every morning")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err == nil {
 		t.Fatalf("Answer returned %+v, want an error", got)
 	}
@@ -411,7 +411,7 @@ func TestAnswerCountsRecordsOnlyOnce(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{record(t, tCoffee, "I drink coffee every morning")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestAnswerKeepsGoingAfterInvalidToolArguments(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{record(t, "2026-11-01T10:00:00.000000000Z", "I drink coffee every morning")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -476,7 +476,7 @@ func TestAnswerKeepsGoingAfterInvalidToolArgumentsWithRoomToSpare(t *testing.T) 
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{record(t, tCoffee, "I drink coffee every morning")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -508,7 +508,7 @@ func TestAnswerRefusesATooLongKeyword(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{record(t, tCoffee, "I drink coffee every morning")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -527,7 +527,7 @@ func TestAnswerRefusesAnUnparsableAnswer(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{record(t, tCoffee, "I drink coffee every morning")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err == nil {
 		t.Fatalf("Answer returned %+v, want an error", got)
 	}
@@ -546,7 +546,7 @@ func TestAnswerRefusesAnEmptyAnswer(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{record(t, tCoffee, "I drink coffee every morning")}
 
-	if _, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?"); !errors.Is(err, llm.ErrInvalidResponse) {
+	if _, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?"); !errors.Is(err, llm.ErrInvalidResponse) {
 		t.Fatalf("got error %v, want one wrapping llm.ErrInvalidResponse", err)
 	}
 }
@@ -555,7 +555,7 @@ func TestAnswerPassesTheModelUnavailable(t *testing.T) {
 	client := &fakeLLM{errs: []error{llm.ErrUnavailable}}
 	searcher := newFakeSearcher()
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "q")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "q")
 	if err == nil {
 		t.Fatalf("Answer returned %+v, want an error", got)
 	}
@@ -572,7 +572,7 @@ func TestAnswerReportsASearchFailure(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.err = search.ErrSearchFailed
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err == nil {
 		t.Fatalf("Answer returned %+v, want an error", got)
 	}
@@ -597,7 +597,7 @@ func TestAnswerRespectsTheRecordBudget(t *testing.T) {
 	}
 
 	budget := answer.Budget{MaxSearchCalls: 3, MaxRecords: 1, AnswerTimeout: 30 * time.Second}
-	got, err := answer.New(client, searcher, "test-model", budget).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, budget).Answer(context.Background(), "What do I drink?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -616,7 +616,7 @@ func TestAnswerStopsWhenTheTimeIsUp(t *testing.T) {
 
 	budget := answer.Budget{MaxSearchCalls: 3, MaxRecords: 20, AnswerTimeout: 50 * time.Millisecond}
 	start := time.Now()
-	got, err := answer.New(client, searcher, "test-model", budget).Answer(context.Background(), "q")
+	got, err := answer.New(client, searcher, "test-model", 0, budget).Answer(context.Background(), "q")
 	if err == nil {
 		t.Fatalf("Answer returned %+v, want an error", got)
 	}
@@ -647,7 +647,7 @@ func TestAnswerIgnoresDuplicateCitations(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{record(t, tCoffee, "I drink coffee every morning")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -670,7 +670,7 @@ func TestAnswerKeepsTheCitationOrderOfTheModel(t *testing.T) {
 		record(t, tSecond, "I drink tea in the evening"),
 	}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -695,7 +695,7 @@ func TestAnswerKeepsTheEvidenceAcrossRounds(t *testing.T) {
 	searcher.results["coffee"] = []store.Record{record(t, tFirst, "I drink coffee every morning")}
 	searcher.results["tea"] = []store.Record{record(t, tSecond, "I drink tea in the evening")}
 
-	got, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
+	got, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -719,7 +719,7 @@ func TestAnswerShowsTheOriginalTextToTheModel(t *testing.T) {
 	searcher := newFakeSearcher()
 	searcher.results["coffee"] = []store.Record{record(t, tCoffee, "I drink coffee every morning")}
 
-	if _, err := answer.New(client, searcher, "test-model", answer.DefaultBudget()).Answer(context.Background(), "What do I drink?"); err != nil {
+	if _, err := answer.New(client, searcher, "test-model", 0, answer.DefaultBudget()).Answer(context.Background(), "What do I drink?"); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 
@@ -737,5 +737,109 @@ func TestAnswerShowsTheOriginalTextToTheModel(t *testing.T) {
 	}
 	if !strings.Contains(toolResult, tCoffee) {
 		t.Fatalf("the tool result does not carry the record time: %q", toolResult)
+	}
+}
+
+// TestTimeBudgetProducesABudgetExhaustedAnswer covers the rule that running out
+// of the answering budget is a partial answer, not a service failure: the
+// evidence gathered before the deadline is still answered from, and the status
+// says so.
+func TestTimeBudgetProducesABudgetExhaustedAnswer(t *testing.T) {
+	tea := record(t, "2026-11-04T10:00:00.000000000Z", "我喜欢喝乌龙茶")
+	searcher := newFakeSearcher()
+	searcher.results["乌龙茶"] = []store.Record{tea}
+
+	// The first round searches; the second round stalls past the deadline; the
+	// call made after the deadline answers from the evidence already gathered.
+	client := &stallingLLM{
+		first: llm.ToolCallResponse("c1", "search_memory", `{"keywords":["乌龙茶"],"limit":5}`),
+		last:  llm.TextResponse(fmt.Sprintf(`{"answer":"你喜欢喝乌龙茶。","citations":[%q]}`, tea.Time.String())),
+	}
+
+	budget := answer.Budget{MaxSearchCalls: 3, MaxRecords: 20, AnswerTimeout: 120 * time.Millisecond}
+	got, err := answer.New(client, searcher, "test-model", 0, budget).Answer(context.Background(), "我喜欢什么茶？")
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+
+	if got.Status != answer.StatusBudgetExhausted {
+		t.Fatalf("status = %q, want %q", got.Status, answer.StatusBudgetExhausted)
+	}
+	if len(got.Citations) != 1 {
+		t.Fatalf("got %d citations, want 1", len(got.Citations))
+	}
+	if got.Citations[0].Content != "我喜欢喝乌龙茶" {
+		t.Fatalf("citation content = %q, want the original text", got.Citations[0].Content)
+	}
+}
+
+// stallingLLM answers the first call immediately, then never answers until its
+// context ends, then answers the call that comes after the deadline.
+type stallingLLM struct {
+	mu    sync.Mutex
+	calls int
+	first *llm.Response
+	last  *llm.Response
+}
+
+func (s *stallingLLM) Complete(ctx context.Context, req llm.Request) (*llm.Response, error) {
+	s.mu.Lock()
+	s.calls++
+	call := s.calls
+	s.mu.Unlock()
+
+	switch call {
+	case 1:
+		return s.first, nil
+	case 2:
+		// Hold the call until the answering budget expires.
+		<-ctx.Done()
+		return nil, fmt.Errorf("llm: %w", ctx.Err())
+	default:
+		return s.last, nil
+	}
+}
+
+// TestTimeBudgetWithoutEvidenceIsNoMatch covers the other side of the same
+// rule: a deadline that expires before anything was found must not invent an
+// answer, and must not turn into a service error either.
+func TestTimeBudgetWithoutEvidenceIsNoMatch(t *testing.T) {
+	searcher := newFakeSearcher() // knows nothing
+
+	client := &stallingLLM{
+		first: llm.ToolCallResponse("c1", "search_memory", `{"keywords":["车"],"limit":5}`),
+		last:  llm.TextResponse(`{"answer":"巴黎是法国首都。","citations":[]}`),
+	}
+
+	budget := answer.Budget{MaxSearchCalls: 3, MaxRecords: 20, AnswerTimeout: 120 * time.Millisecond}
+	got, err := answer.New(client, searcher, "test-model", 0, budget).Answer(context.Background(), "我的车是什么颜色？")
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+
+	if got.Status != answer.StatusNoMatch {
+		t.Fatalf("status = %q, want %q", got.Status, answer.StatusNoMatch)
+	}
+	if got.Answer != answer.NoMatchAnswer {
+		t.Fatalf("answer = %q, want the fixed no-match text", got.Answer)
+	}
+	if len(got.Citations) != 0 {
+		t.Fatalf("got %d citations, want none", len(got.Citations))
+	}
+}
+
+// TestAnswerUsesTheConfiguredTemperature covers the rule that the answering
+// model's temperature comes from the configuration rather than being fixed.
+func TestAnswerUsesTheConfiguredTemperature(t *testing.T) {
+	client := &fakeLLM{responses: []*llm.Response{finalResponse(`{"answer":"ok","citations":[]}`)}}
+	searcher := newFakeSearcher()
+
+	if _, err := answer.New(client, searcher, "test-model", 0.3, answer.DefaultBudget()).
+		Answer(context.Background(), "q"); err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+
+	if got, want := client.lastRequest().Temperature, 0.3; got != want {
+		t.Fatalf("temperature = %v, want the configured %v", got, want)
 	}
 }

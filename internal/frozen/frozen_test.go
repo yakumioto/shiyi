@@ -426,7 +426,7 @@ func newHandler(t *testing.T, judgeClient, answerClient llm.Client, memory store
 		Config: cfg,
 		Judge:  classify.New(judgeClient, cfg.Classifier.Model, cfg.Classifier.Temperature),
 		Store:  memory,
-		Answerer: answer.New(answerClient, search.New(dir), cfg.Answer.Model, answer.Budget{
+		Answerer: answer.New(answerClient, search.New(dir), cfg.Answer.Model, cfg.Answer.Temperature, answer.Budget{
 			MaxSearchCalls: cfg.Budget.MaxSearchCalls,
 			MaxRecords:     cfg.Budget.MaxRecords,
 			AnswerTimeout:  cfg.Budget.AnswerTimeout,

@@ -553,3 +553,58 @@ func TestShardNameAtMonthBoundary(t *testing.T) {
 		})
 	}
 }
+
+// TestMidFileLineWithWrongFieldsStopsStartup covers a line that is valid JSON
+// but not a memory entry: a record has exactly version, content and time, so a
+// line missing one of them (or carrying extra fields) is damage, not data.
+func TestMidFileLineWithWrongFieldsStopsStartup(t *testing.T) {
+	cases := []struct {
+		name    string
+		damaged string
+	}{
+		{
+			name:    "missing content and time",
+			damaged: `{"version":1}`,
+		},
+		{
+			name:    "extra field",
+			damaged: `{"version":1,"content":"x","time":"2026-11-04T10:00:00.000000000Z","kind":"record"}`,
+		},
+		{
+			name:    "version is not a positive number",
+			damaged: `{"version":0,"content":"x","time":"2026-11-04T10:00:00.000000000Z"}`,
+		},
+		{
+			name:    "time is not a timestamp",
+			damaged: `{"version":1,"content":"x","time":"not-a-time"}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+
+			first, err := store.New(dir, store.ShardMonthly)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			for _, content := range []string{"第一条", "第二条", "第三条"} {
+				if _, err := first.Append(context.Background(), content); err != nil {
+					t.Fatalf("Append(%q): %v", content, err)
+				}
+			}
+
+			files := shardFiles(t, dir)
+			path := filepath.Join(dir, files[0])
+			lines := readLines(t, path)
+			lines[1] = tc.damaged
+			if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+				t.Fatalf("write damaged shard: %v", err)
+			}
+
+			if _, err := store.New(dir, store.ShardMonthly); err == nil {
+				t.Fatal("New should refuse to start on a middle line that is not a memory entry")
+			}
+		})
+	}
+}
