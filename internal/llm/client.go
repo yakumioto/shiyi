@@ -16,6 +16,46 @@ import (
 // streams an endless body must not be able to exhaust the process memory.
 const maxResponseBytes = 8 << 20 // 8 MiB
 
+// Who owns the model and the temperature:
+//
+// A caller that names a model in its Request owns the request: the model and
+// the temperature in the Request are sent as they are. A Request without a
+// model is filled in from the Options the client was built with.
+//
+// This keeps the temperature a caller passes to classify.New or answer.New
+// effective, while a bare client still behaves like a configured default.
+
+// Options describes one OpenAI-compatible model endpoint.
+//
+// The API key is never stored in the configuration file; it is read at run
+// time from an environment variable and handed over here.
+type Options struct {
+	// BaseURL is the API root, for example "https://api.deepseek.com" or
+	// "https://host/v1". A trailing slash is allowed.
+	BaseURL string
+
+	// Model is the model name sent with every request.
+	Model string
+
+	// APIKey is the bearer token. It is only ever used for the
+	// Authorization header and never logged.
+	APIKey string
+
+	// Timeout bounds a single round trip.
+	Timeout time.Duration
+
+	// Temperature is the value sent with every request.
+	Temperature float64
+
+	// HTTPClient is the transport used for the round trip. A nil value
+	// means a client with no timeout of its own; the request timeout is
+	// applied through the request context either way.
+	HTTPClient *http.Client
+
+	// Logger receives diagnostics. A nil value means the default logger.
+	Logger *slog.Logger
+}
+
 // HTTPClient talks to an OpenAI-compatible Chat Completions endpoint.
 //
 // It never lets provider detail escape: errors carry a status-level message
@@ -31,47 +71,37 @@ type HTTPClient struct {
 }
 
 // New returns a client for the given endpoint.
-//
-// baseURL is the API root, for example "https://api.deepseek.com" or
-// "https://host/v1"; a trailing slash is allowed. timeout bounds a single
-// round trip; temperature is the value sent with every request.
-func New(baseURL, model, apiKey string, timeout time.Duration, temperature float64) *HTTPClient {
-	return &HTTPClient{
-		baseURL:     baseURL,
-		model:       model,
-		apiKey:      apiKey,
-		timeout:     timeout,
-		temperature: temperature,
+func New(opts Options) *HTTPClient {
+	c := &HTTPClient{
+		baseURL:     opts.BaseURL,
+		model:       opts.Model,
+		apiKey:      opts.APIKey,
+		timeout:     opts.Timeout,
+		temperature: opts.Temperature,
 		http:        &http.Client{},
 		logger:      slog.Default(),
 	}
-}
-
-// WithHTTPClient replaces the HTTP client used for the round trip. Tests use
-// it to control transport; a nil argument is ignored.
-func (c *HTTPClient) WithHTTPClient(h *http.Client) *HTTPClient {
-	if h != nil {
-		c.http = h
+	if opts.HTTPClient != nil {
+		c.http = opts.HTTPClient
 	}
-	return c
-}
-
-// WithLogger replaces the logger used for diagnostics. A nil argument is
-// ignored.
-func (c *HTTPClient) WithLogger(l *slog.Logger) *HTTPClient {
-	if l != nil {
-		c.logger = l
+	if opts.Logger != nil {
+		c.logger = opts.Logger
 	}
 	return c
 }
 
 // Complete performs one Chat Completions round trip.
+//
+// A request that names a model is self-contained: it supplies its own model
+// and temperature, so a caller that configures them (the classifier and the
+// answerer do) keeps full control. A request without a model falls back to
+// the values the client was configured with.
 func (c *HTTPClient) Complete(ctx context.Context, req Request) (*Response, error) {
 	payload := req
 	if payload.Model == "" {
 		payload.Model = c.model
+		payload.Temperature = c.temperature
 	}
-	payload.Temperature = c.temperature
 
 	body, err := json.Marshal(payload)
 	if err != nil {
