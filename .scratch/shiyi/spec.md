@@ -1,6 +1,6 @@
 # Shiyi v1
 
-Status: ready-for-agent
+Status: ready-for-agent → **implemented**（集成分支 `feat/shiyi-v1`，8 张票全部关闭）
 
 ## Problem Statement
 
@@ -116,4 +116,4 @@ Shiyi 是一个单用户、Chat-first 的本地服务。每次输入先由可配
 - **已知风险**：LLM 可能把查询误判为记录，而系统没有更正功能，错误记录会永久留下；网络抖动重发可能产生重复记录；跨换行短语检索不到；引用校验只能保证引用来源存在，不能保证回答的每句话都被支撑；数据是明文 JSONL，没有加密；模型不可用即服务不可用。
 - **技术细节**：数据字段、配置项、提示词、错误码表、分片与恢复规则、验收清单见 [design.md](design.md)。
 - **实施任务**：按 [issues/](issues/) 中 01 到 10 的顺序执行；01 为项目骨架，02 为存储，03 为 LLM 客户端，04 为检索，05 为回答循环，06 为 HTTP API，07 为 CLI，08 为 Web，09 为冻结测试集，10 为容器与文档。
-- **状态**：本 spec 已标注 `ready-for-agent`，无需额外分诊。
+- **状态**：已实现。八张票全部关闭，验收清单与冻结测试集通过，见 `.scratch/shiyi/issues/` 各票的 `## Comments`。
