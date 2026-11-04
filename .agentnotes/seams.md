@@ -86,6 +86,14 @@ func (c Config) Validate() error             // 必填项、shard 枚举、目�
 func (c Config) APIKey() (string, error)     // 从 Answer.APIKeyEnv 指向的环境变量读
 func (c Config) AuthToken() string           // 从 AuthTokenEnv 指向的环境变量读；未设置返回 ""
 
+// internal/store
+// 分片粒度用字符串传入，避免 internal/store 依赖 internal/config。
+// 取值必须是 "monthly" / "weekly" / "daily"。
+func New(dataDir string, shard string) (*Store, error)
+
+// internal/classify
+func New(client llm.Client, model string, temperature float64) Judge
+
 // internal/llm
 type Options struct {
     BaseURL     string
@@ -155,6 +163,30 @@ cmd/shiyi → 全部
 - `internal/store` **不** import `internal/config`。
 - `internal/answer` **不** import `internal/httpapi`。
 - `internal/web` **不** import `internal/httpapi`。
+
+## 分片粒度字符串
+
+`internal/store` 不依赖 `internal/config`，所以分片粒度以字符串传递。
+合法值：`"monthly"`、`"weekly"`、`"daily"`。非法值 → `store.New` 返回错误。
+
+## 已知坑：TOML 时长字段（票 01a 必须处理）
+
+`github.com/pelletier/go-toml/v2` **不能**把 `"20s"` 直接解码到 `time.Duration` 字段：
+
+```
+toml: cannot decode TOML string into struct field ModelConfig.Timeout of type time.Duration
+```
+
+而 design.md §8 的配置契约写的是字符串：`timeout = "20s"`、`answer_timeout = "30s"`、
+`request_timeout = "60s"`。整数会被解析成纳秒，语义错误。
+
+**规定的修法**（保持 `config.Config` 的字段类型不变，不要改冻结签名的公开类型）：
+在 `internal/config` 内部用一个私有 raw 结构体承接 TOML，时长字段声明为 `string`，
+解析后再用 `time.ParseDuration` 转换成 `time.Duration` 赋给 `Config`。即
+`Load` / `LoadFile` 的**实现细节**，不影响 `Config` 的公开字段类型。
+
+已实测：`encoding.TextUnmarshaler` 路径与 `UnmarshalTOML` 路径都不如私有 raw 结构可靠，
+请直接用 raw 结构方案。
 
 ## 错误映射表（唯一权威）
 
