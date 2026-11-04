@@ -66,24 +66,21 @@ func buildServer(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 		classifierKey = strings.TrimSpace(os.Getenv(cfg.Classifier.APIKeyEnv))
 	}
 
-	classifierClient := llm.New(llm.Options{
-		BaseURL:     cfg.Classifier.BaseURL,
-		Model:       cfg.Classifier.Model,
-		APIKey:      classifierKey,
-		Timeout:     cfg.Classifier.Timeout,
-		Temperature: cfg.Classifier.Temperature,
-		HTTPClient:  &http.Client{Timeout: cfg.Classifier.Timeout},
-		Logger:      logger,
-	})
-	answerClient := llm.New(llm.Options{
-		BaseURL:     cfg.Answer.BaseURL,
-		Model:       cfg.Answer.Model,
-		APIKey:      answerKey,
-		Timeout:     cfg.Answer.Timeout,
-		Temperature: cfg.Answer.Temperature,
-		HTTPClient:  &http.Client{Timeout: cfg.Answer.Timeout},
-		Logger:      logger,
-	})
+	classifierClient := llm.New(
+		cfg.Classifier.BaseURL,
+		cfg.Classifier.Model,
+		classifierKey,
+		cfg.Classifier.Timeout,
+		cfg.Classifier.Temperature,
+	).WithHTTPClient(&http.Client{Timeout: cfg.Classifier.Timeout}).WithLogger(logger)
+
+	answerClient := llm.New(
+		cfg.Answer.BaseURL,
+		cfg.Answer.Model,
+		answerKey,
+		cfg.Answer.Timeout,
+		cfg.Answer.Temperature,
+	).WithHTTPClient(&http.Client{Timeout: cfg.Answer.Timeout}).WithLogger(logger)
 
 	memory, err := store.New(cfg.DataDir, string(cfg.Shard))
 	if err != nil {
