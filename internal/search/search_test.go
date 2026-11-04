@@ -425,3 +425,54 @@ func TestSearchSkipsFilesThatAreNotShards(t *testing.T) {
 		t.Fatalf("got %d records %v, want none: only *.jsonl shards are searched", len(got), timesOf(got))
 	}
 }
+
+// TestSearchHandlesKeywordsThatLookLikeFlags checks that a keyword which
+// looks like a command line flag is searched for and not taken for one.
+func TestSearchHandlesKeywordsThatLookLikeFlags(t *testing.T) {
+	requireRG(t)
+
+	const tPrice = "2026-11-01T10:00:00.000000000Z"
+
+	dir := t.TempDir()
+	writeShard(t, dir, "2026-11.jsonl", newRecord(t, tPrice, "my price is -5 dollars"))
+
+	for _, keyword := range []string{"-5", "--help", "-e"} {
+		got, err := search.New(dir).Search(context.Background(), []string{keyword}, 10)
+		if err != nil {
+			t.Fatalf("Search with %q: %v", keyword, err)
+		}
+		if keyword == "-5" {
+			if len(got) != 1 {
+				t.Fatalf("Search with %q: got %d records %v, want 1", keyword, len(got), timesOf(got))
+			}
+			continue
+		}
+		if len(got) != 0 {
+			t.Fatalf("Search with %q: got %d records %v, want none", keyword, len(got), timesOf(got))
+		}
+	}
+}
+
+// TestSearchHandlesRegularExpressionCharacters checks that a keyword with
+// regular expression characters is searched for literally: the dot in "5."
+// matches the dot and nothing else.
+func TestSearchHandlesRegularExpressionCharacters(t *testing.T) {
+	requireRG(t)
+
+	const tA = "2026-11-01T10:00:00.000000000Z"
+	const tB = "2026-11-02T10:00:00.000000000Z"
+
+	dir := t.TempDir()
+	writeShard(t, dir, "2026-11.jsonl",
+		newRecord(t, tA, "the cost is 5.00 dollars"),
+		newRecord(t, tB, "the cost is 5x00 dollars"),
+	)
+
+	got, err := search.New(dir).Search(context.Background(), []string{"5."}, 10)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(got) != 1 || got[0].Time.String() != tA {
+		t.Fatalf("got %d records %v, want only %s: the keyword is matched literally", len(got), timesOf(got), tA)
+	}
+}
