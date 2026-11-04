@@ -1,4 +1,4 @@
-//go:build serve_ready && web_ready
+//go:build serve_ready
 
 package main
 
