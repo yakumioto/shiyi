@@ -16,7 +16,7 @@ type ValidationError struct {
 }
 
 func (e *ValidationError) Error() string {
-	return "invalid configuration:\n  - " + strings.Join(e.Problems, "\n  - ")
+	return "配置无效：\n  - " + strings.Join(e.Problems, "\n  - ")
 }
 
 // Validate reports whether the configuration can start the service. It checks
@@ -29,14 +29,14 @@ func (c Config) Validate() error {
 	var problems []string
 
 	if strings.TrimSpace(c.Listen) == "" {
-		problems = append(problems, "listen must not be empty (set listen or SHIYI_LISTEN)")
+		problems = append(problems, "listen 不能为空（设置 listen 或 SHIYI_LISTEN）")
 	}
 	if !c.Shard.Valid() {
 		problems = append(problems, fmt.Sprintf(
-			"shard %q is not one of monthly, weekly, daily (set shard or SHIYI_SHARD)", string(c.Shard)))
+			"shard %q 不是 monthly、weekly、daily 之一（设置 shard 或 SHIYI_SHARD）", string(c.Shard)))
 	}
 	if c.MaxBodyBytes <= 0 {
-		problems = append(problems, "max_body_bytes must be positive")
+		problems = append(problems, "max_body_bytes 必须是正数")
 	}
 
 	problems = append(problems, validateModel("answer", c.Answer)...)
@@ -54,16 +54,16 @@ func (c Config) Validate() error {
 	}
 
 	if c.Budget.MaxSearchCalls <= 0 {
-		problems = append(problems, "budget.max_search_calls must be positive")
+		problems = append(problems, "budget.max_search_calls 必须是正数")
 	}
 	if c.Budget.MaxRecords <= 0 {
-		problems = append(problems, "budget.max_records must be positive")
+		problems = append(problems, "budget.max_records 必须是正数")
 	}
 	if c.Budget.AnswerTimeout <= 0 {
-		problems = append(problems, "budget.answer_timeout must be positive")
+		problems = append(problems, "budget.answer_timeout 必须是正数")
 	}
 	if c.Budget.RequestTimeout <= 0 {
-		problems = append(problems, "budget.request_timeout must be positive")
+		problems = append(problems, "budget.request_timeout 必须是正数")
 	}
 
 	if len(problems) > 0 {
@@ -78,18 +78,18 @@ func validateModel(name string, m ModelConfig) []string {
 	prefix := name + "."
 
 	if strings.TrimSpace(m.BaseURL) == "" {
-		problems = append(problems, prefix+"base_url must not be empty")
+		problems = append(problems, prefix+"base_url 不能为空")
 	}
 	if strings.TrimSpace(m.Model) == "" {
-		problems = append(problems, prefix+"model must not be empty")
+		problems = append(problems, prefix+"model 不能为空")
 	}
 	if strings.TrimSpace(m.APIKeyEnv) == "" {
-		problems = append(problems, prefix+"api_key_env must name the environment variable holding the API key")
+		problems = append(problems, prefix+"api_key_env 必须给出存 API key 的环境变量名")
 	} else if _, err := m.apiKey(); err != nil {
-		problems = append(problems, prefix+err.Error())
+		problems = append(problems, prefix+"api_key_env："+err.Error())
 	}
 	if m.Timeout <= 0 {
-		problems = append(problems, prefix+"timeout must be positive")
+		problems = append(problems, prefix+"timeout 必须是正数")
 	}
 	return problems
 }
@@ -101,11 +101,11 @@ func (c Config) validateDataDir() error {
 		return err
 	}
 	if err := os.MkdirAll(expanded, 0o755); err != nil {
-		return fmt.Errorf("data_dir %s is not writable: %w", expanded, err)
+		return fmt.Errorf("data_dir %s 不可写：%w", expanded, err)
 	}
 	probe, err := os.CreateTemp(expanded, ".shiyi-write-probe-*")
 	if err != nil {
-		return fmt.Errorf("data_dir %s is not writable: %w", expanded, err)
+		return fmt.Errorf("data_dir %s 不可写：%w", expanded, err)
 	}
 	name := probe.Name()
 	probe.Close()
@@ -116,7 +116,7 @@ func (c Config) validateDataDir() error {
 // validateRipgrep ensures the search binary is on PATH.
 func (c Config) validateRipgrep() error {
 	if _, err := exec.LookPath("rg"); err != nil {
-		return errors.New("ripgrep (rg) is not on PATH; install it before starting Shiyi")
+		return errors.New("PATH 里找不到 ripgrep（rg），请先安装再启动 Shiyi")
 	}
 	return nil
 }
@@ -137,11 +137,11 @@ func APIKeyFor(m ModelConfig) (string, error) {
 func (m ModelConfig) apiKey() (string, error) {
 	name := strings.TrimSpace(m.APIKeyEnv)
 	if name == "" {
-		return "", errors.New("api_key_env must name the environment variable holding the API key")
+		return "", errors.New("api_key_env 必须给出存 API key 的环境变量名")
 	}
 	value := os.Getenv(name)
 	if strings.TrimSpace(value) == "" {
-		return "", fmt.Errorf("environment variable %s is empty; export the API key there", name)
+		return "", fmt.Errorf("环境变量 %s 为空，请把 API key 导出到那里", name)
 	}
 	return value, nil
 }

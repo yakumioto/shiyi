@@ -38,7 +38,7 @@ func loadAndValidateConfig() (config.Config, error) {
 		return config.Config{}, fmt.Errorf("加载配置失败: %w", err)
 	}
 	if err := cfg.Validate(); err != nil {
-		return config.Config{}, fmt.Errorf("配置无效: %w", err)
+		return config.Config{}, err
 	}
 	return cfg, nil
 }

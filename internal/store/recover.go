@@ -9,11 +9,15 @@ import (
 	"time"
 )
 
-// maxLineBytes bounds one JSONL line. The API caps a request body at 1 MiB, so
-// a record can never need much more than that, but its JSON encoding can be
-// twice as long when the original text holds characters that have to be
-// escaped.
-const maxLineBytes = 8 << 20
+// MaxLineBytes is the largest JSONL line this package will read.
+//
+// The API caps an input at one mebibyte, but a record's JSON encoding can be
+// twice that when the original text is made of characters that have to be
+// escaped, and a little more again for the envelope. Anything that reads a
+// shard — the store itself, the search, the crash recovery — has to agree on
+// this number, because a record that was written but can no longer be read is
+// a memory the user has lost.
+const MaxLineBytes = 8 << 20
 
 // recover scans every shard at start-up, isolating an incomplete tail and
 // restoring the clock from the newest record.
@@ -188,7 +192,7 @@ func (s *FS) readShard(path string) ([]Record, error) {
 	var records []Record
 	lineNo := 0
 	scanner := bufio.NewScanner(handle)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
+	scanner.Buffer(make([]byte, 0, 64*1024), MaxLineBytes)
 
 	for scanner.Scan() {
 		lineNo++

@@ -29,10 +29,6 @@ var (
 	ErrSearchFailed = errors.New("search: search failed")
 )
 
-// maxRecordBytes bounds one shard line. A record holds the original text of
-// an input, which the API caps at one mebibyte.
-const maxRecordBytes = 1<<20 + 1<<16
-
 // Ripgrep finds records by pre-filtering shard files with ripgrep and then
 // matching the record's original text in Go.
 type Ripgrep struct {
@@ -198,7 +194,7 @@ func readRecords(paths []string) ([]store.Record, error) {
 		}
 
 		scanner := bufio.NewScanner(file)
-		scanner.Buffer(make([]byte, 0, 64*1024), maxRecordBytes)
+		scanner.Buffer(make([]byte, 0, 64*1024), store.MaxLineBytes)
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if line == "" {

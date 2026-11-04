@@ -476,3 +476,46 @@ func TestSearchHandlesRegularExpressionCharacters(t *testing.T) {
 		t.Fatalf("got %d records %v, want only %s: the keyword is matched literally", len(got), timesOf(got), tA)
 	}
 }
+
+// TestALargeRecordCanBeFoundAgain covers the widest input the API accepts.
+//
+// A one-mebibyte input of characters that have to be escaped grows to about
+// two mebibytes once it is JSON-encoded. A record that was written must stay
+// findable, so the reader has to agree with the writer on how long a line may
+// be; otherwise the memory is saved and then silently unsearchable.
+func TestALargeRecordCanBeFoundAgain(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{name: "one mebibyte of newlines", content: strings.Repeat("\n", 1<<20) + "needle"},
+		{name: "one mebibyte of quotes", content: strings.Repeat(`"`, 1<<20) + "needle"},
+		{name: "half a mebibyte of newlines", content: strings.Repeat("\n", 512<<10) + "needle"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			memory, err := store.New(dir, store.ShardMonthly)
+			if err != nil {
+				t.Fatalf("open store: %v", err)
+			}
+			if _, err := memory.Append(context.Background(), tc.content); err != nil {
+				t.Fatalf("append: %v", err)
+			}
+
+			got, err := search.New(dir).Search(context.Background(), []string{"needle"}, 5)
+			if err != nil {
+				t.Fatalf("search a record that was just written: %v", err)
+			}
+			if len(got) != 1 {
+				t.Fatalf("got %d records, want the one that was just written", len(got))
+			}
+			if got[0].Content != tc.content {
+				t.Fatalf("the record came back changed")
+			}
+		})
+	}
+}
