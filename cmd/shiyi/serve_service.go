@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -103,13 +104,16 @@ func runServe(ctx context.Context, opts Options, stdout, stderr io.Writer) int {
 // and is handed to the model clients; it is never logged and never written
 // anywhere.
 func buildServer(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
-	classifierKey, err := cfg.APIKey()
-	if err != nil {
-		return nil, fmt.Errorf("读取分类器 API key: %w", err)
-	}
 	answerKey, err := cfg.APIKey()
 	if err != nil {
-		return nil, fmt.Errorf("读取回答 API key: %w", err)
+		return nil, fmt.Errorf("读取 API key: %w", err)
+	}
+
+	// The classifier may name its own key variable; otherwise it inherits
+	// the one of the answer model.
+	classifierKey := answerKey
+	if cfg.Classifier.APIKeyEnv != "" && cfg.Classifier.APIKeyEnv != cfg.Answer.APIKeyEnv {
+		classifierKey = strings.TrimSpace(os.Getenv(cfg.Classifier.APIKeyEnv))
 	}
 
 	classifierClient := llm.New(llm.Options{
