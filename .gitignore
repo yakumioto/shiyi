@@ -1,0 +1,7 @@
+.gocache/
+.gomodcache/
+.goenv/
+.worktrees/
+shiyi
+/dist/
+*.test
