@@ -2,13 +2,11 @@ package main
 
 import (
 	"net/http"
-	"os"
 	"time"
 )
 
 // cliTokenEnv is the environment variable the CLI reads its bearer token
-// from. It matches the default of auth_token_env in the documented
-// configuration.
+// from. It is the default of auth_token_env in the documented configuration.
 const cliTokenEnv = "SHIYI_AUTH_TOKEN"
 
 // requestTimeout bounds a single request to the service.
@@ -19,9 +17,14 @@ const requestTimeout = 60 * time.Second
 // The client keeps no state between calls: there is no local cache, no
 // history and no retry.
 func newSender(opts Options) (sender, error) {
+	token, err := resolveToken()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Client{
 		BaseURL:    opts.Server,
 		HTTPClient: &http.Client{Timeout: requestTimeout},
-		Token:      os.Getenv(cliTokenEnv),
+		Token:      token,
 	}, nil
 }
