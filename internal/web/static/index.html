@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shiyi · 个人记忆</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="page">
+  <header class="page-head">
+    <h1 class="title">Shiyi</h1>
+    <p class="lede">Shiyi 是一个单用户的个人记忆系统。说一句话，它要么把它记下来，要么从你已有的记忆里找出答案。页面只显示当前会话，刷新后不留任何痕迹。</p>
+  </header>
+
+  <ul id="messages" class="messages" role="log" aria-live="polite" aria-label="当前会话">
+    <li class="msg msg-hint">上面还没有内容。发一句话试试：想记住的事，或者想问的问题。</li>
+  </ul>
+
+  <form id="form" class="composer" autocomplete="off">
+    <label class="visually-hidden" for="input">输入</label>
+    <textarea id="input" class="composer-input" rows="3" placeholder="想记住的事，或想问的问题……" aria-label="输入"></textarea>
+    <button id="send" class="composer-send" type="submit">发送</button>
+  </form>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
