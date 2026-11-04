@@ -59,6 +59,7 @@ func parseArgs(args []string) (Options, error) {
 	opts := Options{Mode: ModeREPL, Server: defaultServer}
 
 	var positional []string
+	serverSet := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
@@ -73,8 +74,10 @@ func parseArgs(args []string) (Options, error) {
 			}
 			i++
 			opts.Server = args[i]
+			serverSet = true
 		case strings.HasPrefix(arg, "--server=") || strings.HasPrefix(arg, "-server="):
 			opts.Server = strings.SplitN(arg, "=", 2)[1]
+			serverSet = true
 		case strings.HasPrefix(arg, "-"):
 			return opts, fmt.Errorf("未知选项 %q", arg)
 		default:
@@ -98,6 +101,12 @@ func parseArgs(args []string) (Options, error) {
 	case positional[0] == "serve":
 		if len(positional) > 1 {
 			return opts, fmt.Errorf("serve 不接受额外参数: %q", strings.Join(positional[1:], " "))
+		}
+		// The service listens on the address from the configuration file;
+		// --server names the service the client talks to and would only
+		// be misleading here.
+		if serverSet {
+			return opts, fmt.Errorf("serve 不接受 --server：监听地址取自配置文件")
 		}
 		opts.Mode = ModeServe
 	default:

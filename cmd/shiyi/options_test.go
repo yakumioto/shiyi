@@ -70,6 +70,11 @@ func TestParseArgs(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "serve 不接受 --server",
+			args:    []string{"serve", "--server", "http://example.com:9000"},
+			wantErr: true,
+		},
+		{
 			name: "双横线之后的文本当作消息",
 			args: []string{"--", "-5度"},
 			want: Options{Mode: ModeSend, Server: defaultServer, Text: "-5度"},
