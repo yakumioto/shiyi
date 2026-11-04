@@ -1,0 +1,38 @@
+# 容器内默认配置。
+#
+# 这份文件由 Dockerfile 复制到镜像里的 /etc/shiyi/config.toml，
+# 进程通过 SHIYI_CONFIG 指向它。
+#
+# 与 config.example.toml 的差别：数据目录指向数据卷 /data，
+# 监听 0.0.0.0（容器内必须监听全部网卡，否则端口映射不通），
+# 密钥统一从 SHIYI_API_KEY 环境变量读取。
+
+listen = "0.0.0.0:8787"
+data_dir = "/data"
+shard = "monthly"
+
+# 容器默认不鉴权。需要在局域网暴露时，用 -e SHIYI_AUTH_TOKEN=... 注入，
+# 该环境变量非空即启用 Bearer 鉴权。
+auth_token_env = "SHIYI_AUTH_TOKEN"
+
+max_body_bytes = 1048576
+
+[classifier]
+base_url = "https://api.deepseek.com"
+model = "deepseek-chat"
+api_key_env = "SHIYI_API_KEY"
+timeout = "20s"
+temperature = 0
+
+[answer]
+base_url = "https://api.deepseek.com"
+model = "deepseek-chat"
+api_key_env = "SHIYI_API_KEY"
+timeout = "30s"
+temperature = 0
+
+[budget]
+max_search_calls = 3
+max_records = 20
+answer_timeout = "30s"
+request_timeout = "60s"

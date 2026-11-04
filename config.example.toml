@@ -1,0 +1,59 @@
+# Shiyi 配置示例
+#
+# 拷贝这份文件，改名为 config.toml 后放到 ~/.config/shiyi/config.toml；
+# 也可以放在任意路径，再用环境变量 SHIYI_CONFIG 指向它。
+#
+# 重要：密钥只通过环境变量提供。配置文件里只写「变量名」，
+# 不写密钥本身，密钥也不会出现在日志里。
+
+# 监听地址。默认只监听本机；只有需要局域网访问时才改成 0.0.0.0:8787。
+listen = "127.0.0.1:8787"
+
+# 数据目录，记忆条目的 JSONL 分片文件放在这里。
+# ~ 会被展开成当前用户的主目录。
+data_dir = "~/.local/share/shiyi"
+
+# 分片粒度，决定一条记录写进哪个文件：monthly（按月）、weekly（按周）、daily（按天）。
+# 边界一律按 UTC 计算。
+shard = "monthly"
+
+# 鉴权 token 所在的环境变量名。设置该环境变量后，POST /messages 需要带
+# Authorization: Bearer <token>；该环境变量为空或未设置时则不鉴权。
+# /healthz 永远不鉴权。
+auth_token_env = "SHIYI_AUTH_TOKEN"
+
+# 请求体上限（字节）。超过返回 413 request_too_large。默认 1 MiB。
+max_body_bytes = 1048576
+
+# 意图分类模型：判断输入是「记录」「查询」还是「无法识别」。
+# 省略整个 [classifier] 段时，继承 [answer] 的设置。
+[classifier]
+# OpenAI 兼容端点的根地址，不要带 /v1 之后的路径。
+base_url = "https://api.deepseek.com"
+# 模型名。
+model = "deepseek-chat"
+# 从这个环境变量读取 API key，不从配置文件读取。
+api_key_env = "DEEPSEEK_API_KEY"
+# 单次分类请求的超时。
+timeout = "20s"
+# 分类要求输出稳定，取 0。
+temperature = 0
+
+# 回答模型：检索到记忆后据此生成带引用的回答。
+[answer]
+base_url = "https://api.deepseek.com"
+model = "deepseek-chat"
+api_key_env = "DEEPSEEK_API_KEY"
+timeout = "30s"
+temperature = 0
+
+# 单次查询的检索预算，防止一次复杂提问把服务拖住。
+[budget]
+# 最多调用多少次检索工具。
+max_search_calls = 3
+# 最多返回多少条不同的记忆条目。
+max_records = 20
+# 回答阶段的总时限。
+answer_timeout = "30s"
+# 单次请求的总时限。
+request_timeout = "60s"
