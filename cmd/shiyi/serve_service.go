@@ -3,17 +3,11 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
-	"time"
 
 	"shiyi/internal/answer"
 	"shiyi/internal/classify"
@@ -24,78 +18,26 @@ import (
 	"shiyi/internal/store"
 )
 
-// shutdownTimeout bounds how long the service waits for in-flight requests.
-const shutdownTimeout = 10 * time.Second
+// defaultServeDeps wires the service to the real internal packages.
+var defaultServeDeps = serveDeps{
+	loadConfig: loadAndValidateConfig,
+	build:      buildServer,
+}
 
-// runServe starts the local Shiyi service.
+// loadAndValidateConfig reads the configuration and checks it.
 //
-// The configuration is loaded and validated first, so that a deployment
-// problem is reported before the socket is opened rather than on the first
-// request. The start-up log names the listen address, the data directory and
-// the shard granularity; it never names the API key.
-func runServe(ctx context.Context, opts Options, stdout, stderr io.Writer) int {
-	logger := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
+// The configuration comes from SHIYI_CONFIG or from the default path; a
+// problem with it is reported before the socket is opened, so that a
+// deployment mistake shows up at start-up rather than on the first request.
+func loadAndValidateConfig() (config.Config, error) {
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(stderr, "shiyi: 加载配置失败: %v\n", err)
-		return exitFailure
+		return config.Config{}, fmt.Errorf("加载配置失败: %w", err)
 	}
 	if err := cfg.Validate(); err != nil {
-		fmt.Fprintf(stderr, "shiyi: 配置无效: %v\n", err)
-		return exitFailure
+		return config.Config{}, fmt.Errorf("配置无效: %w", err)
 	}
-
-	handler, err := buildServer(cfg, logger)
-	if err != nil {
-		fmt.Fprintf(stderr, "shiyi: 启动服务失败: %v\n", err)
-		return exitFailure
-	}
-
-	server := &http.Server{
-		Addr:              cfg.Listen,
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
-	// The signal context is cancelled on SIGINT and SIGTERM; the service
-	// then stops accepting and waits for the in-flight requests.
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	errCh := make(chan error, 1)
-	go func() {
-		logger.Info("shiyi 服务启动",
-			"listen", cfg.Listen,
-			"data_dir", cfg.DataDir,
-			"shard", string(cfg.Shard),
-		)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
-			return
-		}
-		errCh <- nil
-	}()
-
-	select {
-	case err := <-errCh:
-		if err != nil {
-			fmt.Fprintf(stderr, "shiyi: 服务退出: %v\n", err)
-			return exitFailure
-		}
-		return exitOK
-	case <-ctx.Done():
-		logger.Info("shiyi 服务收到停止信号，正在关闭")
-	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		fmt.Fprintf(stderr, "shiyi: 关闭服务失败: %v\n", err)
-		return exitFailure
-	}
-	logger.Info("shiyi 服务已停止")
-	return exitOK
+	return cfg, nil
 }
 
 // buildServer assembles the service from the internal packages.
