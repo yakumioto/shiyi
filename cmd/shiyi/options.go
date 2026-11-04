@@ -21,6 +21,8 @@ const (
 	ModeServe
 	// ModeHelp prints the usage text and exits.
 	ModeHelp
+	// ModeVersion prints the version and exits.
+	ModeVersion
 )
 
 // Options is the parsed command line.
@@ -44,6 +46,7 @@ const usageText = `shiyi — Chat-first 的个人记忆系统
 
 选项:
   --server <地址>          服务地址，默认 ` + defaultServer + `
+  --version                显示版本号
 
 交互式会话:
   每行单独发送，不携带任何上下文；空行忽略；/quit 或 /exit 退出。
@@ -68,6 +71,8 @@ func parseArgs(args []string) (Options, error) {
 			i = len(args)
 		case arg == "-h" || arg == "-help" || arg == "--help":
 			opts.Mode = ModeHelp
+		case arg == "-v" || arg == "-version" || arg == "--version":
+			opts.Mode = ModeVersion
 		case arg == "--server" || arg == "-server":
 			if i+1 >= len(args) {
 				return opts, fmt.Errorf("%s 缺少取值", arg)
@@ -89,6 +94,9 @@ func parseArgs(args []string) (Options, error) {
 	// to be told off about an option they did not mean to pass.
 	if opts.Mode == ModeHelp {
 		return Options{Mode: ModeHelp, Server: defaultServer}, nil
+	}
+	if opts.Mode == ModeVersion {
+		return Options{Mode: ModeVersion, Server: defaultServer}, nil
 	}
 
 	if err := validateServer(opts.Server); err != nil {

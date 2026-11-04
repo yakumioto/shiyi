@@ -55,6 +55,11 @@ func TestParseArgs(t *testing.T) {
 			want: Options{Mode: ModeHelp, Server: defaultServer},
 		},
 		{
+			name: "version",
+			args: []string{"--version"},
+			want: Options{Mode: ModeVersion, Server: defaultServer},
+		},
+		{
 			name: "serve 之后的 help",
 			args: []string{"serve", "--help"},
 			want: Options{Mode: ModeHelp, Server: defaultServer},

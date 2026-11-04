@@ -8,6 +8,9 @@ import (
 	"strings"
 )
 
+// version is the version of the shiyi command.
+const version = "shiyi 1.0.0"
+
 // Exit codes the CLI returns.
 const (
 	// exitOK means everything worked.
@@ -45,6 +48,9 @@ func run(ctx context.Context, args []string, factory senderFactory, stdin io.Rea
 	switch opts.Mode {
 	case ModeHelp:
 		fmt.Fprint(stdout, usageText)
+		return exitOK
+	case ModeVersion:
+		fmt.Fprintln(stdout, version)
 		return exitOK
 	case ModeServe:
 		return runServe(ctx, opts, stdout, stderr)
