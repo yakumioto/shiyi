@@ -80,7 +80,13 @@ func TestHTTPClientMapsFailuresToSentinelErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv, _ := serve(t, tt.status, tt.body)
 
-			client := New(srv.URL, "test-model", "sk-test-key", 5*time.Second, 0)
+			client := New(Options{
+				BaseURL:     srv.URL,
+				Model:       "test-model",
+				APIKey:      "sk-test-key",
+				Timeout:     5 * time.Second,
+				Temperature: 0,
+			})
 
 			_, err := client.Complete(context.Background(), Request{
 				Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -105,7 +111,13 @@ func TestHTTPClientTimeoutIsUnavailable(t *testing.T) {
 		srv.Close()
 	})
 
-	client := New(srv.URL, "test-model", "sk-test-key", 50*time.Millisecond, 0)
+	client := New(Options{
+		BaseURL:     srv.URL,
+		Model:       "test-model",
+		APIKey:      "sk-test-key",
+		Timeout:     50 * time.Millisecond,
+		Temperature: 0,
+	})
 
 	_, err := client.Complete(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -128,7 +140,13 @@ func TestHTTPClientContextCancelIsUnavailable(t *testing.T) {
 		srv.Close()
 	})
 
-	client := New(srv.URL, "test-model", "sk-test-key", time.Minute, 0)
+	client := New(Options{
+		BaseURL:     srv.URL,
+		Model:       "test-model",
+		APIKey:      "sk-test-key",
+		Timeout:     time.Minute,
+		Temperature: 0,
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -157,7 +175,13 @@ func TestHTTPClientNeverLeaksKeyOrProviderBody(t *testing.T) {
 
 	srv, _ := serve(t, http.StatusInternalServerError, providerBody)
 
-	client := New(srv.URL, "test-model", key, 5*time.Second, 0)
+	client := New(Options{
+		BaseURL:     srv.URL,
+		Model:       "test-model",
+		APIKey:      key,
+		Timeout:     5 * time.Second,
+		Temperature: 0,
+	})
 
 	_, err := client.Complete(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -181,7 +205,14 @@ func TestHTTPClientLogsStatusWithoutKeyOrBody(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	client := New(srv.URL, "test-model", key, 5*time.Second, 0).WithLogger(logger)
+	client := New(Options{
+		BaseURL:     srv.URL,
+		Model:       "test-model",
+		APIKey:      key,
+		Timeout:     5 * time.Second,
+		Temperature: 0,
+		Logger:      logger,
+	})
 
 	_, err := client.Complete(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -217,7 +248,13 @@ func TestHTTPClientJoinsBaseURLWithoutDoubleSlash(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv, cap := serve(t, http.StatusOK, textAnswer)
 
-			client := New(tt.baseURL(srv.URL), "test-model", "sk-test-key", 5*time.Second, 0)
+			client := New(Options{
+				BaseURL:     tt.baseURL(srv.URL),
+				Model:       "test-model",
+				APIKey:      "sk-test-key",
+				Timeout:     5 * time.Second,
+				Temperature: 0,
+			})
 
 			if _, err := client.Complete(context.Background(), Request{
 				Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -236,7 +273,13 @@ func TestHTTPClientJoinsBaseURLWithoutDoubleSlash(t *testing.T) {
 func TestHTTPClientSendsToolsAndToolChoice(t *testing.T) {
 	srv, cap := serve(t, http.StatusOK, textAnswer)
 
-	client := New(srv.URL, "test-model", "sk-test-key", 5*time.Second, 0)
+	client := New(Options{
+		BaseURL:     srv.URL,
+		Model:       "test-model",
+		APIKey:      "sk-test-key",
+		Timeout:     5 * time.Second,
+		Temperature: 0,
+	})
 
 	toolChoice := &ToolChoice{Type: "function"}
 	toolChoice.Function = &struct {
@@ -294,7 +337,13 @@ func TestHTTPClientParsesToolCalls(t *testing.T) {
 
 	srv, _ := serve(t, http.StatusOK, body)
 
-	client := New(srv.URL, "test-model", "sk-test-key", 5*time.Second, 0)
+	client := New(Options{
+		BaseURL:     srv.URL,
+		Model:       "test-model",
+		APIKey:      "sk-test-key",
+		Timeout:     5 * time.Second,
+		Temperature: 0,
+	})
 
 	resp, err := client.Complete(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -330,7 +379,13 @@ func TestHTTPClientParsesToolCalls(t *testing.T) {
 func TestHTTPClientSendsResponseFormatWhenRequested(t *testing.T) {
 	srv, cap := serve(t, http.StatusOK, textAnswer)
 
-	client := New(srv.URL, "test-model", "sk-test-key", 5*time.Second, 0)
+	client := New(Options{
+		BaseURL:     srv.URL,
+		Model:       "test-model",
+		APIKey:      "sk-test-key",
+		Timeout:     5 * time.Second,
+		Temperature: 0,
+	})
 
 	_, err := client.Complete(context.Background(), Request{
 		Messages:       []Message{{Role: RoleUser, Content: "hi"}},
@@ -354,7 +409,13 @@ func TestHTTPClientSendsResponseFormatWhenRequested(t *testing.T) {
 func TestHTTPClientOmitsResponseFormatWhenUnset(t *testing.T) {
 	srv, cap := serve(t, http.StatusOK, textAnswer)
 
-	client := New(srv.URL, "test-model", "sk-test-key", 5*time.Second, 0)
+	client := New(Options{
+		BaseURL:     srv.URL,
+		Model:       "test-model",
+		APIKey:      "sk-test-key",
+		Timeout:     5 * time.Second,
+		Temperature: 0,
+	})
 
 	if _, err := client.Complete(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -378,13 +439,18 @@ func TestHTTPClientUsesInjectedHTTPClient(t *testing.T) {
 	srv, _ := serve(t, http.StatusOK, textAnswer)
 
 	used := false
-	client := New(srv.URL, "test-model", "sk-test-key", 5*time.Second, 0).
-		WithHTTPClient(&http.Client{
+	client := New(Options{
+		BaseURL: srv.URL,
+		Model:   "test-model",
+		APIKey:  "sk-test-key",
+		Timeout: 5 * time.Second,
+		HTTPClient: &http.Client{
 			Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				used = true
 				return http.DefaultTransport.RoundTrip(r)
 			}),
-		})
+		},
+	})
 
 	if _, err := client.Complete(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -399,7 +465,13 @@ func TestHTTPClientUsesInjectedHTTPClient(t *testing.T) {
 func TestHTTPClientKeepsRequestModelWhenSet(t *testing.T) {
 	srv, cap := serve(t, http.StatusOK, textAnswer)
 
-	client := New(srv.URL, "configured-model", "sk-test-key", 5*time.Second, 0)
+	client := New(Options{
+		BaseURL:     srv.URL,
+		Model:       "configured-model",
+		APIKey:      "sk-test-key",
+		Timeout:     5 * time.Second,
+		Temperature: 0,
+	})
 
 	if _, err := client.Complete(context.Background(), Request{
 		Model:    "request-model",
@@ -420,7 +492,13 @@ func TestHTTPClientReportsUnreachableEndpoint(t *testing.T) {
 	url := srv.URL
 	srv.Close()
 
-	client := New(url, "test-model", "sk-test-key", 2*time.Second, 0)
+	client := New(Options{
+		BaseURL:     url,
+		Model:       "test-model",
+		APIKey:      "sk-test-key",
+		Timeout:     2 * time.Second,
+		Temperature: 0,
+	})
 
 	_, err := client.Complete(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -436,7 +514,13 @@ func TestHTTPClientReportsUnreachableEndpoint(t *testing.T) {
 func TestHTTPClientReportsUnbuildableURLAsUnavailable(t *testing.T) {
 	// A control character in the base URL makes the request impossible to
 	// build at all: the model cannot be reached.
-	client := New("http://example.com/\x7f", "test-model", "sk-test-key", time.Second, 0)
+	client := New(Options{
+		BaseURL:     "http://example.com/\x7f",
+		Model:       "test-model",
+		APIKey:      "sk-test-key",
+		Timeout:     time.Second,
+		Temperature: 0,
+	})
 
 	_, err := client.Complete(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -467,7 +551,13 @@ func TestHTTPClientRejectsOversizedResponse(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	client := New(srv.URL, "test-model", "sk-test-key", 10*time.Second, 0)
+	client := New(Options{
+		BaseURL:     srv.URL,
+		Model:       "test-model",
+		APIKey:      "sk-test-key",
+		Timeout:     10 * time.Second,
+		Temperature: 0,
+	})
 
 	_, err := client.Complete(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -487,7 +577,13 @@ func TestHTTPClientParsesToolCallWithNullContent(t *testing.T) {
 
 	srv, _ := serve(t, http.StatusOK, body)
 
-	client := New(srv.URL, "test-model", "sk-test-key", 5*time.Second, 0)
+	client := New(Options{
+		BaseURL:     srv.URL,
+		Model:       "test-model",
+		APIKey:      "sk-test-key",
+		Timeout:     5 * time.Second,
+		Temperature: 0,
+	})
 
 	resp, err := client.Complete(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "hi"}},
@@ -507,10 +603,133 @@ func TestHTTPClientParsesToolCallWithNullContent(t *testing.T) {
 	}
 }
 
+func TestNewTakesOptions(t *testing.T) {
+	srv, cap := serve(t, http.StatusOK, textAnswer)
+
+	client := New(Options{
+		BaseURL:     srv.URL,
+		Model:       "test-model",
+		APIKey:      "sk-test-key",
+		Timeout:     5 * time.Second,
+		Temperature: 0.25,
+	})
+
+	if _, err := client.Complete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "hi"}},
+	}); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+
+	_, path, header, body := cap.get()
+	if path != "/chat/completions" {
+		t.Errorf("path = %q, want %q", path, "/chat/completions")
+	}
+	if got, want := header.Get("Authorization"), "Bearer sk-test-key"; got != want {
+		t.Errorf("Authorization = %q, want %q", got, want)
+	}
+	if got := body["model"]; got != "test-model" {
+		t.Errorf("model = %v, want %q", got, "test-model")
+	}
+	if got := body["temperature"]; got != 0.25 {
+		t.Errorf("temperature = %v, want 0.25", got)
+	}
+}
+
+func TestNewAcceptsNilHTTPClientAndLogger(t *testing.T) {
+	srv, _ := serve(t, http.StatusOK, textAnswer)
+
+	client := New(Options{
+		BaseURL:    srv.URL,
+		Model:      "test-model",
+		APIKey:     "sk-test-key",
+		Timeout:    5 * time.Second,
+		HTTPClient: nil,
+		Logger:     nil,
+	})
+
+	if _, err := client.Complete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "hi"}},
+	}); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+}
+
+func TestHTTPClientPrefersRequestModelAndTemperature(t *testing.T) {
+	tests := []struct {
+		name         string
+		clientModel  string
+		clientTemp   float64
+		requestModel string
+		requestTemp  float64
+		wantModel    string
+		wantTemp     float64
+	}{
+		{
+			name:        "client defaults fill an empty request",
+			clientModel: "configured-model",
+			clientTemp:  0.7,
+			wantModel:   "configured-model",
+			wantTemp:    0.7,
+		},
+		{
+			name:         "request wins over the client default",
+			clientModel:  "configured-model",
+			clientTemp:   0.7,
+			requestModel: "request-model",
+			requestTemp:  0.2,
+			wantModel:    "request-model",
+			wantTemp:     0.2,
+		},
+		{
+			name:        "a zero temperature stays zero",
+			clientModel: "configured-model",
+			clientTemp:  0,
+			wantModel:   "configured-model",
+			wantTemp:    0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, cap := serve(t, http.StatusOK, textAnswer)
+
+			client := New(Options{
+				BaseURL:     srv.URL,
+				Model:       tt.clientModel,
+				APIKey:      "sk-test-key",
+				Timeout:     5 * time.Second,
+				Temperature: tt.clientTemp,
+			})
+
+			if _, err := client.Complete(context.Background(), Request{
+				Model:       tt.requestModel,
+				Temperature: tt.requestTemp,
+				Messages:    []Message{{Role: RoleUser, Content: "hi"}},
+			}); err != nil {
+				t.Fatalf("Complete: %v", err)
+			}
+
+			_, _, _, body := cap.get()
+			if got := body["model"]; got != tt.wantModel {
+				t.Errorf("model = %v, want %q", got, tt.wantModel)
+			}
+			if got := body["temperature"]; got != tt.wantTemp {
+				t.Errorf("temperature = %v, want %v", got, tt.wantTemp)
+			}
+		})
+	}
+}
+
 func TestHTTPClientSendsOpenAICompatibleRequest(t *testing.T) {
 	srv, cap := serve(t, http.StatusOK, textAnswer)
 
-	client := New(srv.URL, "test-model", "sk-test-key", 5*time.Second, 0.25)
+	client := New(Options{
+		BaseURL:     srv.URL,
+		Model:       "test-model",
+		APIKey:      "sk-test-key",
+		Timeout:     5 * time.Second,
+		Temperature: 0.25,
+	})
 
 	resp, err := client.Complete(context.Background(), Request{
 		Messages: []Message{{Role: RoleUser, Content: "hi"}},
