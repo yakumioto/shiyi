@@ -77,13 +77,23 @@ type ToolChoice struct {
 	} `json:"function,omitempty"`
 }
 
+// ResponseFormat asks the model to answer with JSON. Providers that support
+// it honour the request; providers that do not ignore the field.
+type ResponseFormat struct {
+	Type string `json:"type"`
+}
+
+// The response format that constrains the answer to a JSON object.
+const ResponseFormatJSONObject = "json_object"
+
 // Request is a Chat Completions request.
 type Request struct {
-	Model       string      `json:"model"`
-	Messages    []Message   `json:"messages"`
-	Temperature float64     `json:"temperature"`
-	Tools       []Tool      `json:"tools,omitempty"`
-	ToolChoice  *ToolChoice `json:"tool_choice,omitempty"`
+	Model          string          `json:"model"`
+	Messages       []Message       `json:"messages"`
+	Temperature    float64         `json:"temperature"`
+	Tools          []Tool          `json:"tools,omitempty"`
+	ToolChoice     *ToolChoice     `json:"tool_choice,omitempty"`
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
 }
 
 // Response is the part of a Chat Completions answer Shiyi reads.
