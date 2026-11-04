@@ -1,0 +1,10 @@
+{"name": "明确记录", "input": "我喜欢喝乌龙茶", "model_response": "{\"kind\":\"record\"}", "expect": {"kind": "record", "http_status": 201, "writes_record": true}}
+{"name": "明确查询", "input": "我上次说过喜欢喝什么茶？", "model_response": "{\"kind\":\"query\"}", "expect": {"kind": "query", "http_status": 200, "writes_record": false, "status": "no_match"}, "answer_turns": [{"text": "{\"answer\":\"没有找到相关记忆\",\"citations\":[]}"}]}
+{"name": "混合输入整体按查询处理", "input": "我明天去杭州，另外我之前说过喜欢什么茶？", "model_response": "{\"kind\":\"mixed\"}", "expect": {"kind": "query", "http_status": 200, "writes_record": false, "status": "no_match"}, "answer_turns": [{"text": "{\"answer\":\"没有找到相关记忆\",\"citations\":[]}"}]}
+{"name": "闲聊无法识别", "input": "今天天气不错啊", "model_response": "{\"kind\":\"unrecognized\"}", "expect": {"kind": "unrecognized", "http_status": 200, "writes_record": false}}
+{"name": "模型输出非 JSON", "input": "随便", "model_response": "这是一条记录", "expect": {"http_status": 502, "error_code": "model_invalid_response", "writes_record": false}}
+{"name": "模型输出未知 kind", "input": "随便", "model_response": "{\"kind\":\"remember\"}", "expect": {"http_status": 502, "error_code": "model_invalid_response", "writes_record": false}}
+{"name": "模型不可达", "input": "我喜欢喝茶", "model_error": "unavailable", "expect": {"http_status": 503, "error_code": "model_unavailable", "writes_record": false}}
+{"name": "模型返回空 choices", "input": "我喜欢喝茶", "model_error": "invalid_response", "expect": {"http_status": 502, "error_code": "model_invalid_response", "writes_record": false}}
+{"name": "记录内容逐字保留", "input": "  前导空格和尾随空格  ", "model_response": "{\"kind\":\"record\"}", "expect": {"kind": "record", "http_status": 201, "writes_record": true}}
+{"name": "中文混合记录", "input": "我下周三要去上海出差，顺路看看老朋友", "model_response": "{\"kind\":\"record\"}", "expect": {"kind": "record", "http_status": 201, "writes_record": true}}
