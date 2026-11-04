@@ -101,5 +101,11 @@ func buildServer(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 		return nil, fmt.Errorf("构造 HTTP 服务: %w", err)
 	}
 
+	// The web page is served by the same process, so that the deployment
+	// stays a single binary.
+	if page := webPage(); page != nil {
+		return server.HandlerWithWeb(page), nil
+	}
+
 	return server.Handler(), nil
 }
