@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"strings"
 	"testing"
 )
@@ -223,5 +222,3 @@ func TestRunREPLMode(t *testing.T) {
 		t.Errorf("退出码 = %d，期望 0", code)
 	}
 }
-
-var _ io.Reader = strings.NewReader("")
