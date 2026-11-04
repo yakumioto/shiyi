@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -131,7 +132,7 @@ func TestREPLReportsServiceErrorToStderr(t *testing.T) {
 
 func TestREPLContinuesAfterError(t *testing.T) {
 	sender := &fakeSender{}
-	sender.err = errSendFailed
+	sender.err = errors.New("连接被拒绝")
 
 	var out, errOut bytes.Buffer
 	_ = runREPL(context.Background(), sender, strings.NewReader("一\n二\n"), &out, &errOut)

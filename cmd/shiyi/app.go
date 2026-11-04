@@ -3,14 +3,10 @@ package main
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
 )
-
-// errSendFailed is returned when a message could not be delivered at all.
-var errSendFailed = errors.New("发送失败")
 
 // Exit codes the CLI returns.
 const (
