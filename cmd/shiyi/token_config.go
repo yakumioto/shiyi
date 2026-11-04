@@ -1,5 +1,3 @@
-//go:build config_ready
-
 package main
 
 import (
@@ -9,24 +7,22 @@ import (
 	"shiyi/internal/config"
 )
 
-// resolveToken reads the bearer token the service expects.
+// resolveToken reads the bearer token the CLI sends to the service.
 //
-// The token comes from the environment variable the configuration names
-// (auth_token_env, by default SHIYI_AUTH_TOKEN). When the configuration
-// cannot be read, the default variable is used. An unset variable means the
-// service does not authenticate and the client sends no Authorization header.
+// The variable it reads comes from the configuration's auth_token_env. When
+// the configuration cannot be read, or does not name a variable, the default
+// SHIYI_AUTH_TOKEN is used. An unset or empty variable means the service does
+// not authenticate and the client sends no Authorization header.
 //
 // The token itself is never printed and never written anywhere.
 func resolveToken() (string, error) {
-	cfg, err := config.Load()
-	if err == nil {
-		if token := cfg.AuthToken(); token != "" {
-			return strings.TrimSpace(token), nil
+	name := cliTokenEnv
+
+	if cfg, err := config.Load(); err == nil {
+		if configured := strings.TrimSpace(cfg.AuthTokenEnv); configured != "" {
+			name = configured
 		}
-		// The configuration names a token variable that holds nothing:
-		// the service does not authenticate.
-		return "", nil
 	}
 
-	return strings.TrimSpace(os.Getenv(cliTokenEnv)), nil
+	return strings.TrimSpace(os.Getenv(name)), nil
 }

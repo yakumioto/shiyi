@@ -1,12 +1,7 @@
-//go:build serve_ready
-
-// This file holds the real wiring of the service. It is compiled only when
-// the `serve_ready` build tag is set, which happens once the internal
-// packages it needs are merged. Without the tag the service falls back to
-// serve_placeholder.go, which fails with a message naming what is missing.
-//
-// Once the internal packages are in place: drop the build tag below, delete
-// serve_placeholder.go, and delete web_page_none.go if internal/web landed.
+// This file holds the real wiring of the service: it loads and validates the
+// configuration, assembles the memory store, the model clients, the search,
+// the answering loop and the HTTP server, and hands the result to the server
+// lifecycle in serve.go.
 
 package main
 
@@ -66,21 +61,25 @@ func buildServer(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 		classifierKey = strings.TrimSpace(os.Getenv(cfg.Classifier.APIKeyEnv))
 	}
 
-	classifierClient := llm.New(
-		cfg.Classifier.BaseURL,
-		cfg.Classifier.Model,
-		classifierKey,
-		cfg.Classifier.Timeout,
-		cfg.Classifier.Temperature,
-	).WithHTTPClient(&http.Client{Timeout: cfg.Classifier.Timeout}).WithLogger(logger)
+	classifierClient := llm.New(llm.Options{
+		BaseURL:     cfg.Classifier.BaseURL,
+		Model:       cfg.Classifier.Model,
+		APIKey:      classifierKey,
+		Timeout:     cfg.Classifier.Timeout,
+		Temperature: cfg.Classifier.Temperature,
+		HTTPClient:  &http.Client{Timeout: cfg.Classifier.Timeout},
+		Logger:      logger,
+	})
 
-	answerClient := llm.New(
-		cfg.Answer.BaseURL,
-		cfg.Answer.Model,
-		answerKey,
-		cfg.Answer.Timeout,
-		cfg.Answer.Temperature,
-	).WithHTTPClient(&http.Client{Timeout: cfg.Answer.Timeout}).WithLogger(logger)
+	answerClient := llm.New(llm.Options{
+		BaseURL:     cfg.Answer.BaseURL,
+		Model:       cfg.Answer.Model,
+		APIKey:      answerKey,
+		Timeout:     cfg.Answer.Timeout,
+		Temperature: cfg.Answer.Temperature,
+		HTTPClient:  &http.Client{Timeout: cfg.Answer.Timeout},
+		Logger:      logger,
+	})
 
 	memory, err := store.New(cfg.DataDir, string(cfg.Shard))
 	if err != nil {

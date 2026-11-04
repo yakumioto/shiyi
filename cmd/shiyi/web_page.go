@@ -1,5 +1,3 @@
-//go:build serve_ready
-
 package main
 
 import (
