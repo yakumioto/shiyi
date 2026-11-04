@@ -1,0 +1,4 @@
+.worktrees/
+/shiyi
+/dist/
+*.test
