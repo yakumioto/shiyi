@@ -89,7 +89,7 @@ func buildServer(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 
 	judge := classify.New(classifierClient, cfg.Classifier.Model, cfg.Classifier.Temperature)
 	searcher := search.New(cfg.DataDir)
-	answerer := answer.New(answerClient, searcher, cfg.Answer.Model, cfg.Answer.Temperature, answer.Budget{
+	answerer := answer.New(answerClient, searcher, cfg.Answer.Model, answer.Budget{
 		MaxSearchCalls: cfg.Budget.MaxSearchCalls,
 		MaxRecords:     cfg.Budget.MaxRecords,
 		AnswerTimeout:  cfg.Budget.AnswerTimeout,
