@@ -2,6 +2,6 @@
 .gomodcache/
 .goenv/
 .worktrees/
-shiyi
+/shiyi
 /dist/
 *.test
