@@ -18,12 +18,15 @@ import (
 //
 // The token itself is never printed and never written anywhere.
 func resolveToken() (string, error) {
-	name := cliTokenEnv
-
 	cfg, err := config.Load()
-	if err == nil && cfg.AuthTokenEnv != "" {
-		name = cfg.AuthTokenEnv
+	if err == nil {
+		if token := cfg.AuthToken(); token != "" {
+			return strings.TrimSpace(token), nil
+		}
+		// The configuration names a token variable that holds nothing:
+		// the service does not authenticate.
+		return "", nil
 	}
 
-	return strings.TrimSpace(os.Getenv(name)), nil
+	return strings.TrimSpace(os.Getenv(cliTokenEnv)), nil
 }
