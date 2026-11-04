@@ -18,6 +18,9 @@ import (
 // `serve_ready` build tag and is only compiled once they are in place.
 //
 // Until then the command fails with a message that says what is missing.
+// This file and the build tags are temporary scaffolding: once the internal
+// packages are merged, serve_service.go loses its tag and this file is
+// deleted.
 var defaultServeDeps = serveDeps{
 	loadConfig: func() (config.Config, error) {
 		return config.Config{}, fmt.Errorf("serve 尚未实现：服务需要 internal/httpapi 等内部包")

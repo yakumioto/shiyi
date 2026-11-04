@@ -1,5 +1,13 @@
 //go:build serve_ready
 
+// This file holds the real wiring of the service. It is compiled only when
+// the `serve_ready` build tag is set, which happens once the internal
+// packages it needs are merged. Without the tag the service falls back to
+// serve_placeholder.go, which fails with a message naming what is missing.
+//
+// Once the internal packages are in place: drop the build tag below, delete
+// serve_placeholder.go, and delete web_page_none.go if internal/web landed.
+
 package main
 
 import (
