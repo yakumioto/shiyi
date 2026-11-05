@@ -10,7 +10,7 @@
 
 ## 接缝与写范围
 
-01 确定并提交认证配置类型、认证深模块构造器/公共契约、HTTP 路由/线格式/错误映射和接缝清单；不启用未实现的认证。02 实现 config/auth/httpapi 和必要的现有测试/冒烟适配；03 仅 Web 静态资源与 Web 测试；04 仅 cmd、部署脚本、文档、示例、Docker/Makefile/CI；05 浏览器测试设施及验证流程。并行阶段 03/04 不改冻结接缝，确需改动先报告 Lead，停止相关实施再统一调整。
+01 确定并提交认证配置类型、认证深模块构造器/公共契约、HTTP 路由/线格式/错误映射和接缝清单；不启用未实现的认证。02 实现 config/auth/httpapi、服务最小认证组装与关闭，以及必要的现有测试/冒烟适配；03 负责 Web 静态资源与测试，并在 tests/browser/ 落地最小真实 HTTPS 交互回归夹具；04 负责 cmd、部署脚本、文档、示例、Docker/Makefile/CI；05 复用并扩展浏览器夹具，接入完整验证流程。并行阶段 03/04 不改冻结接缝，确需改动先报告 Lead，停止相关实施再统一调整。
 
 每票先阅读仓库 AGENTS 与 docs/agents/{issue-tracker,triage-labels,domain,parallel-implementation}.md、GLOSSARY 及相关 ADR。用 read/edit/write 改文件；不能覆盖别人未提交工作。所有门禁用 `make check`，不能另手写 go test/go vet 命令代替。依赖/vendor 更新需提交后再跑 vendor consistency。任何测试未运行必须据实说明。
 
