@@ -93,9 +93,15 @@ done
 
 section "1. 配置键与 internal/config/config.go 的 toml tag 双向对齐"
 
-# 配置公共类型可分文件声明；认证接缝暂未接入运行，但示例仍需覆盖其名称。
+# 旧键只用于迁移拒绝，不能强制写回可运行示例。
 CONFIG_TAGS=$(grep -h -oE 'toml:"[a-z_]+"' internal/config/config.go internal/config/auth_contract.go \
-	| sed 's/toml:"//; s/"$//' | sort -u)
+	| sed 's/toml:"//; s/"$//' | grep -vx 'auth_token_env' | sort -u)
+for f in "$CONFIG_EXAMPLE" "$CONFIG_DOCKER"; do
+	assert_absent "$f" 'auth_token_env' "配置示例不携带旧 Bearer 键"
+	assert_contains "$f" 'password_hash = ""' "示例不嵌入可用密码哈希"
+	assert_contains "$f" 'public_origin = ""' "示例要求部署者显式选择来源"
+	assert_contains "$f" 'dev_anonymous = false' "示例默认关闭开发匿名"
+done
 
 # 标量键：形如 key = value
 toml_keys() { # toml_keys <file>
@@ -144,7 +150,7 @@ for k in $DOCKERCFG_KEYS $DOCKERCFG_SECTIONS; do
 	fi
 done
 
-for s in classifier answer budget; do
+for s in classifier answer budget auth; do
 	if grep -qE "toml:\"$s\"" internal/config/config.go && grep -qE "^\[$s\]" "$CONFIG_EXAMPLE"; then
 		pass "$CONFIG_EXAMPLE 存在 [$s] section"
 	else
@@ -173,7 +179,11 @@ assert_matches "$DOCKERFILE" 'GOPROXY=off' "构建阶段禁用了模块下载（
 assert_matches "$DOCKERFILE" 'apk add --no-cache .*ripgrep|apt-get install .*ripgrep' "runtime 阶段安装了 ripgrep"
 assert_matches "$DOCKERFILE" '^USER shiyi' "以非 root 用户 shiyi 运行"
 assert_matches "$DOCKERFILE" '^EXPOSE 8787' "声明 EXPOSE 8787"
-assert_matches "$DOCKERFILE" '^VOLUME /data' "声明 VOLUME /data"
+assert_matches "$DOCKERFILE" '^VOLUME /data /auth' "声明独立记忆及认证卷"
+assert_matches "$DOCKERFILE" 'chmod 0700 /data /auth' "两个数据目录权限为0700"
+assert_matches "$DOCKERFILE" 'chown .*shiyi.*/auth' "认证目录归非root身份所有"
+assert_absent "$DOCKERFILE" 'ENV SHIYI_AUTH_PASSWORD_HASH=' "镜像不烘焙密码哈希"
+assert_contains "$CONFIG_DOCKER" 'state_dir = "/auth"' "容器认证目录独立于记忆"
 assert_matches "$DOCKERFILE" '^ENTRYPOINT \["/usr/local/bin/shiyi"\]' "ENTRYPOINT 指向 /usr/local/bin/shiyi"
 assert_matches "$DOCKERFILE" '^CMD \["serve"\]' "CMD 为 serve"
 assert_matches "$DOCKERFILE" '^HEALTHCHECK ' "定义了 HEALTHCHECK"
@@ -298,13 +308,14 @@ CONFIG_ENV_NAMES=$(cat "$CONFIG_EXAMPLE" "$CONFIG_DOCKER" \
 	| grep -oE '(api_key_env|auth_token_env)[[:space:]]*=[[:space:]]*"[A-Za-z_][A-Za-z0-9_]*"' \
 	| sed -E 's/.*"([A-Za-z_][A-Za-z0-9_]*)"/\1/' | sort -u)
 
-# design.md §8 明确列出的环境变量覆盖项。
+# 一般覆盖项与冻结认证契约中的固定名称；旧变量必须作为迁移拒绝文档化。
 KNOWN_ENV_OVERRIDES="SHIYI_CONFIG SHIYI_LISTEN SHIYI_DATA_DIR SHIYI_SHARD"
+AUTH_ENV_NAMES=$(grep -oE '"SHIYI_[A-Z_]+"' internal/config/auth_contract.go | tr -d '"' | sort -u)
 
 README_ENV_NAMES=$(grep -oE '\b(SHIYI|DEEPSEEK)_[A-Z0-9_]+\b' "$README" | sort -u)
 
 # 用换行连接，避免多个变量名被当成一个词。
-ALLOWED_ENV=$(printf '%s\n' "$DOCKER_RUNTIME_ENV" "$CONFIG_ENV_NAMES" "$KNOWN_ENV_OVERRIDES" \
+ALLOWED_ENV=$(printf '%s\n' "$DOCKER_RUNTIME_ENV" "$CONFIG_ENV_NAMES" "$KNOWN_ENV_OVERRIDES" "$AUTH_ENV_NAMES" \
 	| tr ' ' '\n' | grep -v '^$' | sort -u)
 
 for e in $README_ENV_NAMES; do
@@ -339,6 +350,8 @@ env_value() { # env_value <name>
 }
 
 assert_eq "$(env_value SHIYI_DATA_DIR)" "/data" "Dockerfile 的 SHIYI_DATA_DIR 为 /data"
+assert_eq "$(env_value SHIYI_AUTH_STATE_DIR)" "/auth" "认证状态路径与记忆分离"
+assert_contains "$README" '/auth' "README说明独立认证卷"
 assert_eq "$(env_value SHIYI_CONFIG)" "/etc/shiyi/config.toml" "Dockerfile 的 SHIYI_CONFIG 为 /etc/shiyi/config.toml"
 assert_eq "$(env_value SHIYI_LISTEN)" "0.0.0.0:8787" "Dockerfile 的 SHIYI_LISTEN 为 0.0.0.0:8787"
 
@@ -353,8 +366,8 @@ assert_contains "$CONFIG_DOCKER" 'listen = "0.0.0.0:8787"' "容器配置的 list
 
 section "5. CLI 子命令一致性"
 
-# design.md §10.1 规定的子命令集合；README 不得发明新子命令。
-KNOWN_SUBCOMMANDS="serve"
+# 实际服务管理入口；不恢复已移除的记忆客户端。
+KNOWN_SUBCOMMANDS=$(printf 'serve\nhash-password\n')
 
 FOUND_SUBCOMMANDS=$(grep -oE '\bshiyi[[:space:]]+[a-z][a-z-]*' "$README" \
 	| sed -E 's/^shiyi[[:space:]]+//' | sort -u)
@@ -363,14 +376,18 @@ for s in $FOUND_SUBCOMMANDS; do
 	if printf '%s\n' "$KNOWN_SUBCOMMANDS" | grep -qx -- "$s"; then
 		pass "README 中的 shiyi 子命令 “$s” 是已知子命令"
 	else
-		fail "README 中的 shiyi 子命令 “$s” 不在 design.md 规定的集合（serve）内"
+		fail "README 中的 shiyi 子命令 “$s” 不在实际管理命令集合内"
 	fi
 done
 
 assert_contains "$README" 'shiyi serve' "README 记录了 shiyi serve"
-assert_contains "$README" '--server' "README 记录了 --server 参数"
-assert_contains "$README" '/quit' "README 记录了 REPL 的 /quit 退出命令"
-assert_contains "$README" 'http://127.0.0.1:8787' "README 写出了 --server 的默认地址"
+assert_contains "$README" 'shiyi hash-password' "README记录安全哈希管理入口"
+assert_contains "$README" '双确认' "README说明交互双确认"
+assert_contains "$README" 'TTY' "README说明终端输入约束"
+assert_contains "$README" '旧调用明确失败' "README说明CLI迁移"
+assert_absent "$README" '/quit' "README不再宣传REPL"
+assert_absent cmd/shiyi/options.go '--server' "服务用法不再宣传客户端地址"
+assert_contains cmd/shiyi/options.go 'hash-password' "管理命令确实存在"
 
 # README 不得出现其它包里不存在的 CLI 动词（防止文档漂移）。
 for bogus in 'shiyi add' 'shiyi query' 'shiyi record' 'shiyi delete' 'shiyi list' 'shiyi config'; do
@@ -398,7 +415,7 @@ assert_contains "$README" 'ripgrep' "README 提到了系统依赖 ripgrep"
 
 section "7. API 契约一致性（README ↔ internal/api）"
 
-API_CODES=$(grep -oE 'Code[A-Za-z]+[[:space:]]*=[[:space:]]*"[a-z_]+"' internal/api/api.go \
+API_CODES=$(grep -h -oE 'Code[A-Za-z]+[[:space:]]*=[[:space:]]*"[a-z_]+"' internal/api/*.go \
 	| sed -E 's/.*"([a-z_]+)"/\1/' | sort -u)
 
 README_CODES=$(grep -oE '`[a-z_]+`|"[a-z_]+"' "$README" | tr -d '`"' | sort -u)
@@ -425,12 +442,12 @@ section "8. README 内容要件"
 for kw in \
 	'无回答持久化' \
 	'无幂等' \
-	'无会话上下文' \
+	'无对话上下文' \
 	'不支持附件' \
 	'跨换行' \
 	'不可更正' \
 	'明文' \
-	'模型不可用即服务不可用' \
+	'模型故障不影响认证' \
 	'只能保证' \
 	'不做向量检索'; do
 	assert_contains "$README" "$kw" "README 已知限制覆盖 “$kw”"
@@ -450,7 +467,21 @@ assert_no_claim "$README" '支持幂等' "README 未把 spec 放弃的能力说�
 assert_no_claim "$README" '支持附件' "README 未把 spec 放弃的能力说成已实现（附件）"
 assert_no_claim "$README" '支持多轮追问' "README 未把 spec 放弃的能力说成已实现（多轮追问）"
 assert_no_claim "$README" '支持向量检索' "README 未把 spec 放弃的能力说成已实现（向量检索）"
-assert_no_claim "$README" '支持会话上下文' "README 未把 spec 放弃的能力说成已实现（会话上下文）"
+assert_no_claim "$README" '支持对话上下文' "README 未把 spec 放弃的能力说成已实现（会话上下文）"
+
+# -------------------------------------------- 9. 认证迁移与部署责任
+section "9. 认证迁移、隐私与部署责任"
+for kw in 'SHIYI_AUTH_TOKEN' 'auth_token_env' '7 天' '30 天' '同一密码重新哈希' '0700' '0600' 'HTTPS' 'CSRF' '加密备份' '管理员' '上游模型' '不是数据加密'; do
+    assert_contains "$README" "$kw" "README说明认证/隐私边界 $kw"
+done
+for route in /auth/session /auth/login /auth/logout /auth/logout-all; do
+    assert_contains "$README" "$route" "README记录认证路由 $route"
+done
+assert_absent "$README" '启用鉴权时 Web 页面不可用' "不再宣传旧Web不可用行为"
+assert_absent "$README" '重启后没有任何会话状态' "区分持久登录与对话上下文"
+assert_contains .github/workflows/ci.yml 'make check' "CI运行完整本地门禁"
+assert_contains .github/workflows/ci.yml 'make image-check' "CI运行真实安全容器门禁"
+assert_contains docs/deployment.md '回滚旧认证状态' "部署说明禁止用旧快照恢复撤销资格"
 
 # ------------------------------------------------------------------ 汇总
 

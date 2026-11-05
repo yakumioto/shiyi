@@ -1,340 +1,219 @@
 # Shiyi
 
-**单用户、Chat-first 的本地个人记忆系统：说一句话就记住，之后用自然语言问出来，答案能指回你的原话。**
+**单用户、Chat-first 的个人记忆系统：通过 HTTPS Web 登录，保存原文，用自然语言查询并核对引用。**
 
-Shiyi 是一个本地 HTTP 服务。你把一段自然语言交给它，它先问 LLM 这是「要记住的东西」还是「在提问」：
-只有被判定为**记录**的输入，才会以**原文**追加到按月分片的 JSONL 文件里；**查询**则触发一次字面检索，
-由 LLM 生成带**引用**的回答。
+输入先由 LLM 判定用途：只有判定为**记录**的输入，才以**原文**追加到 JSONL；
+**查询**触发字面检索并即时返回带**引用**的回答。每条记忆只有 `version`、`content`、`time` 三个字段，原文不改写。
 
-- 数据就是普通 JSONL 文件，不用数据库，不用向量检索，你直接看、直接备份。
-- 每条记录只有三个字段：`version`、`content`、`time`。原文逐字保留，一个字都不改。
-- `time` 是记录的唯一标识，同时也是回答引用它的锚点。
-
----
+登录是访问控制，不是数据加密。敏感原文可以保存，也可以发送到你配置的模型网关及其上游模型。
+当前版本信任服务器及管理员，不承诺服务器完全失陷后保密，也不承诺模型提供方看不到原文。
 
 ## 目录
 
-- [范围裁剪](#范围裁剪)
 - [快速开始：容器](#快速开始容器)
 - [快速开始：本地构建](#快速开始本地构建)
 - [配置](#配置)
+- [登录、恢复与迁移](#登录恢复与迁移)
 - [HTTP API](#http-api)
-- [健康检查](#健康检查)
-- [命令行用法](#命令行用法)
-- [数据格式](#数据格式)
-- [已知限制](#已知限制)
-- [开发](#开发)
-
----
-
-## 范围裁剪
-
-下面这些是 **v1 有意放弃** 的能力，不是实现遗漏。文档不会把它们说成已实现：
-
-| 能力 | v1 状态 | 说明 |
-| --- | --- | --- |
-| 保存查询与回答 | **不做** | 查询和回答只随响应返回，不落盘。重启后没有任何会话状态，也查不到「上次问过什么」。 |
-| 幂等写入 | **不做** | 没有幂等键、没有去重。网络抖动后重发同一条内容，会产生两条独立记录。 |
-| 会话上下文 | **不做** | 每次查询必须自包含，不支持多轮追问，模型看不到历史对话。 |
-| 附件 | **不支持** | v1 只存文本。没有图片、PDF、音频、OCR、视觉模型。 |
-| 向量检索 / embedding / 数据库 | **不做** | 检索只用 ripgrep 做字面匹配，没有语义召回，没有索引。 |
-
-其它同样不在范围内的：多用户与账号体系、记录更正与删除、审计日志、异步任务与队列、
-Markdown 渲染、流式输出、多设备同步、加密、自动更新、多副本。
-
-保留的核心：记录原文可靠保存、证据隔离、检索预算、明确的失败状态、冻结测试集。
-
----
+- [服务管理命令](#服务管理命令)
+- [数据格式与隐私](#数据格式与隐私)
+- [已知限制与后续方向](#已知限制与后续方向)
+- [开发与门禁](#开发与门禁)
 
 ## 快速开始：容器
 
-需要：Docker、一个大模型 API key（DeepSeek、OpenAI 或任何 OpenAI 兼容服务）。
-
-### 1. 构建镜像
+需要 Docker、模型 API key，以及由你管理的域名、HTTPS 证书和反向代理。
+以下是部署指引，**不表示你的实际部署已经配置或验证**。接入责任详见[部署说明](<docs/deployment.md>)。
 
 ```bash
 docker build -t shiyi:latest .
-```
-
-镜像里的 `rg`（ripgrep）是检索的硬依赖，已经装好。可以自己确认：
-
-```bash
 docker run --rm --entrypoint rg shiyi:latest --version
+# 只生成哈希；不需要模型配置，不联网。终端输入两次，不回显密码。
+docker run --rm -it --network none shiyi:latest hash-password
 ```
 
-### 2. 运行
+关闭 shell tracing，不把密码放在参数、管道或命令历史里。将输出的**哈希那一行**复制到权限为 0600 的部署环境文件；
+不要复制终端提示。哈希也应当保密，不把整个终端输出上传到日志或工单。
 
 ```bash
-docker run -d \
-  --name shiyi \
-  -p 8787:8787 \
+umask 077
+# 新建文件，不覆盖你已有的部署凭据文件
+( set -o noclobber; : > shiyi.env )
+${EDITOR:-vi} shiyi.env
+```
+
+文件内容（把占位符换成实际值；环境文件不进行 shell 变量展开）：
+
+```dotenv
+SHIYI_API_KEY=实际模型密钥
+SHIYI_AUTH_PASSWORD_HASH=刚刚生成的完整bcrypt编码
+SHIYI_AUTH_PUBLIC_ORIGIN=https://shiyi.example.com
+```
+
+```bash
+docker run -d --name shiyi --restart unless-stopped \
+  -p 127.0.0.1:8787:8787 \
   -v shiyi-data:/data \
-  -e SHIYI_API_KEY="$DEEPSEEK_API_KEY" \
+  -v shiyi-auth:/auth \
+  --env-file ./shiyi.env \
   shiyi:latest
-```
-
-- `-v shiyi-data:/data`：数据卷。**记录全部写在这里**，换镜像、重启容器都不丢。
-- `-e SHIYI_API_KEY=...`：模型密钥。**只经环境变量传入**，不写进配置文件，也不进日志。
-- `-p 8787:8787`：把容器端口映射到本机。
-
-### 3. 可选：给服务加 token
-
-容器默认监听 `0.0.0.0:8787`。要在局域网上给别人用，请开启 Bearer 鉴权：
-
-```bash
-docker run -d \
-  --name shiyi \
-  -p 8787:8787 \
-  -v shiyi-data:/data \
-  -e SHIYI_API_KEY="$DEEPSEEK_API_KEY" \
-  -e SHIYI_AUTH_TOKEN="$(openssl rand -hex 24)" \
-  shiyi:latest
-```
-
-设了 `SHIYI_AUTH_TOKEN` 之后，`POST /messages` 必须带 `Authorization: Bearer <token>`，
-否则返回 `401 unauthorized`。`GET /healthz` 永远不鉴权。
-
-### 4. 记录一条、查一次
-
-```bash
-# 记录
-curl -sS -X POST http://127.0.0.1:8787/messages \
-  -H 'Content-Type: application/json' \
-  -d '{"content":"我下周一开始新的作息，每天 7 点起床。"}'
-# => {"kind":"record","time":"2026-11-04T09:12:33.481902417Z","version":1}
-
-# 查询
-curl -sS -X POST http://127.0.0.1:8787/messages \
-  -H 'Content-Type: application/json' \
-  -d '{"content":"我的作息是怎样的？"}'
-```
-
-带上 token 时加一行 `-H 'Authorization: Bearer <token>'`。
-
-### 5. 确认数据确实落盘了
-
-```bash
-docker run --rm -v shiyi-data:/data alpine ls -l /data
-# 2026-11.jsonl
-
-docker run --rm -v shiyi-data:/data alpine cat /data/2026-11.jsonl
-# {"version":1,"content":"我下周一开始新的作息，每天 7 点起床。","time":"2026-11-04T09:12:33.481902417Z"}
-```
-
-容器重建（`docker rm -f shiyi && docker run ...`）后记录仍在，因为数据在卷里，不在容器里。
-
-### 容器里用了什么
-
-| 项 | 值 |
-| --- | --- |
-| 基础镜像 | `alpine:3.22`（运行段）/ `golang:1.26-alpine`（构建段） |
-| 运行用户 | `shiyi`（非 root，uid 1000） |
-| 数据目录 | `/data`（数据卷，`SHIYI_DATA_DIR=/data`） |
-| 监听地址 | `0.0.0.0:8787`（`SHIYI_LISTEN`） |
-| 容器内配置 | `/etc/shiyi/config.toml`（`SHIYI_CONFIG`） |
-| 健康检查 | `HEALTHCHECK` 调 `GET /healthz` |
-
-镜像内置的配置以 `SHIYI_API_KEY` 作为 `api_key_env`。想换成别的变量名，
-挂一份自己的配置进去即可（见 [配置](#配置)）。
-
----
-
-## 快速开始：本地构建
-
-需要：Go 1.26、系统里有 `rg`（ripgrep）、一个大模型 API key。
-
-### 1. 构建
-
-```bash
-go build -o shiyi ./cmd/shiyi
-# 或者
-make build
-```
-
-### 2. 准备配置
-
-```bash
-mkdir -p ~/.config/shiyi
-cp config.example.toml ~/.config/shiyi/config.toml
-```
-
-配置默认从 `~/.config/shiyi/config.toml` 读取。放在别处就用 `SHIYI_CONFIG` 指过去：
-
-```bash
-export SHIYI_CONFIG=/path/to/config.toml
-```
-
-### 3. 准备密钥
-
-```bash
-export DEEPSEEK_API_KEY=sk-...      # 对应配置里的 api_key_env
-export SHIYI_AUTH_TOKEN=...          # 可选；不设置则不鉴权
-```
-
-密钥只从环境变量读。配置文件里写的是**变量名**，不是密钥本身。
-
-### 4. 跑起来
-
-```bash
-./shiyi serve
-# 或者
-make run
-```
-
-服务监听 `127.0.0.1:8787`。开另一个终端验证：
-
-```bash
-curl http://127.0.0.1:8787/healthz
+curl -fsS http://127.0.0.1:8787/healthz
 # {"status":"ok"}
 ```
 
-然后用[命令行用法](#命令行用法)或 [HTTP API](#http-api)完成第一次记录和第一次查询。
+将自管的 HTTPS 反向代理指向本机 8787，再通过配置的 HTTPS 来源打开网页、输入密码登录、提交原文。
+**不要直接用内部 HTTP 地址登录**：生产 Cookie 始终是 Secure。
+只对可信反向代理开放后端端口；固定来源校验不代替防火墙，也不能阻止非浏览器客户端伪造请求头。
 
----
+| 镜像约定 | 值 |
+| --- | --- |
+| 基础镜像 | 构建 `golang:1.26-alpine`；运行 `alpine:3.22` |
+| 运行身份 | 非 root `shiyi`，uid/gid 1000 |
+| 记忆卷 | `/data`，`SHIYI_DATA_DIR=/data` |
+| 独立认证卷 | `/auth`，`SHIYI_AUTH_STATE_DIR=/auth`；目录 0700，文件 0600 |
+| 容器内监听 | `SHIYI_LISTEN=0.0.0.0:8787` |
+| 容器内配置 | `/etc/shiyi/config.toml`，由 `SHIYI_CONFIG` 指定 |
+| 存活检查 | 公开 `GET /healthz`，不调用模型 |
+
+正常模式缺少哈希或来源会拒绝启动。镜像不含可用密码/哈希，不自动进入匿名模式。
+重建容器要保留两个命名卷：记忆卷保存记录，认证卷保存登录及撤销状态，二者不可混放。
+绑定宿主目录时须由部署者预先设置 uid/gid 1000 和安全权限，不使用长期 root 或全员可写来绕过错误。
+
+## 快速开始：本地构建
+
+需要 Go 1.26、ripgrep（`rg`）和模型 API key。
+
+```bash
+make build
+mkdir -p ~/.config/shiyi
+cp config.example.toml ~/.config/shiyi/config.toml
+chmod 600 ~/.config/shiyi/config.toml
+# 可选：配置位于其他路径
+export SHIYI_CONFIG="$HOME/.config/shiyi/config.toml"
+# 不把明文登录密码放入命令；只捕获哈希 stdout，提示仍显示在终端
+export SHIYI_AUTH_PASSWORD_HASH="$(./shiyi hash-password)"
+export SHIYI_AUTH_PUBLIC_ORIGIN=https://shiyi.example.com
+# 通过你的秘密管理方式提供 DEEPSEEK_API_KEY，再启动
+./shiyi serve
+```
+
+本地默认只监听 `127.0.0.1:8787`；同样需要自管 HTTPS 代理。模型密钥只从 `api_key_env` 指定的环境变量读取。
+启动不探测模型连通性；**模型故障不影响认证**和存活检查，但分类/回答会明确报错。
 
 ## 配置
 
-配置文件是 TOML，路径由 `SHIYI_CONFIG` 决定，默认 `~/.config/shiyi/config.toml`。
-完整示例见 [`config.example.toml`](config.example.toml)，
-容器内置的那份见 [`docs/config.docker.toml`](docs/config.docker.toml)。
+完整配置见[配置示例](<config.example.toml>)；镜像默认配置见[容器配置](<docs/config.docker.toml>)。
+默认配置文件路径为 `~/.config/shiyi/config.toml`，可用 `SHIYI_CONFIG` 覆盖。
 
-### 顶层
+### 顶层与模型
 
-| 键 | 含义 | 默认值 |
-| --- | --- | --- |
-| `listen` | 监听地址。本地默认只听本机；容器内必须改成 `0.0.0.0:8787` 才能被端口映射访问。 | `127.0.0.1:8787` |
-| `data_dir` | 数据目录，JSONL 分片文件放这里。`~` 会展开成主目录。 | `~/.local/share/shiyi` |
-| `shard` | 分片粒度：`monthly` / `weekly` / `daily`，边界按 UTC 算。 | `monthly` |
-| `auth_token_env` | 鉴权 token 所在的环境变量名。该变量非空时 `POST /messages` 需要 Bearer token；为空或未设置则不鉴权。 | `SHIYI_AUTH_TOKEN` |
-| `max_body_bytes` | 请求体上限（字节），超过返回 `413 request_too_large`。 | `1048576`（1 MiB） |
-
-### `[classifier]` —— 意图分类模型
-
-| 键 | 含义 | 默认值 |
-| --- | --- | --- |
-| `base_url` | OpenAI 兼容端点的根地址，例如 `https://api.deepseek.com`。 | — |
-| `model` | 模型名，例如 `deepseek-chat`。 | — |
-| `api_key_env` | 从这个环境变量读取 API key。 | — |
-| `timeout` | 单次分类请求的超时。 | `20s` |
-| `temperature` | 取 0 让分类结果稳定。 | `0` |
-
-省略整个 `[classifier]` 段时，继承 `[answer]` 的设置。
-
-### `[answer]` —— 回答模型
-
-| 键 | 含义 | 默认值 |
-| --- | --- | --- |
-| `base_url` | OpenAI 兼容端点的根地址。 | — |
-| `model` | 模型名。 | — |
-| `api_key_env` | 从这个环境变量读取 API key。 | — |
-| `timeout` | 单次回答请求的超时。 | `30s` |
-| `temperature` | 取 0。 | `0` |
-
-### `[budget]` —— 单次查询的检索预算
-
-| 键 | 含义 | 默认值 |
-| --- | --- | --- |
-| `max_search_calls` | 最多调用多少次检索工具。 | `3` |
-| `max_records` | 最多返回多少条不同的记忆条目。 | `20` |
-| `answer_timeout` | 回答阶段的总时限。 | `30s` |
-| `request_timeout` | 单次请求的总时限。 | `60s` |
-
-### 环境变量覆盖
-
-配置里的这三项可以直接用环境变量覆盖，环境变量优先：
-
-| 环境变量 | 覆盖的配置项 |
+| 键 | 含义 / 默认 |
 | --- | --- |
-| `SHIYI_CONFIG` | 配置文件路径本身 |
-| `SHIYI_LISTEN` | `listen` |
-| `SHIYI_DATA_DIR` | `data_dir` |
-| `SHIYI_SHARD` | `shard` |
+| `listen` | 本地默认 `127.0.0.1:8787` |
+| `data_dir` | 记忆目录，默认 `~/.local/share/shiyi`，展开 `~` |
+| `shard` | `monthly` / `weekly` / `daily`，默认 monthly，UTC 分界 |
+| `max_body_bytes` | 记忆请求体上限，默认 1048576（1 MiB） |
 
-### 密钥只从环境变量读
+`[classifier]` 是意图分类模型，省略整段时继承 `[answer]`。二者的键：
 
-这是硬规则：**配置文件里永远只写变量名，不写密钥**。
-
-| 变量名 | 用途 |
+| 键 | 含义 / 默认 |
 | --- | --- |
-| `DEEPSEEK_API_KEY` | `config.example.toml` 里 `api_key_env` 的默认值。 |
-| `SHIYI_API_KEY` | 容器内置配置 `docs/config.docker.toml` 里 `api_key_env` 的值。 |
-| `SHIYI_AUTH_TOKEN` | 可选的 Bearer token，用来保护 `POST /messages`。 |
+| `base_url` | OpenAI 兼容端点根地址，例如 `https://api.deepseek.com` |
+| `model` | 模型名，例如 `deepseek-chat` |
+| `api_key_env` | 模型密钥环境变量名，不是密钥本身 |
+| `timeout` | 分类默认 `"20s"`，回答默认 `"30s"` |
+| `temperature` | 默认 0 |
 
-换成别的提供商，只要改 `base_url`、`model` 和 `api_key_env` 三个键即可；
-密钥依然只放在环境变量里。密钥不会被写进配置文件，也不会出现在日志中。
+示例使用 `DEEPSEEK_API_KEY`，容器使用 `SHIYI_API_KEY`。更换提供商时修改 `base_url`、`model`、`api_key_env`。
+模型密钥不写入配置文件；登录密码哈希可以放在受保护配置或环境变量中。密码、哈希与模型密钥不得复用。
 
-### 启动校验
+`[budget]` 的默认值：`max_search_calls = 3`、`max_records = 20`、`answer_timeout = "30s"`、`request_timeout = "60s"`。
+所有时长必须是字符串，不能写成整数秒。
 
-进程启动时会检查：必填项是否齐全、分片枚举是否合法、数据目录是否可写、
-`rg` 是否在 PATH 里、API key 对应的环境变量是否非空。
-任何一项不满足都会直接退出并打印可操作的错误信息，而不是等到第一次请求才失败。
+### `[auth]` 与环境覆盖
 
-> **注意**：`timeout`、`answer_timeout`、`request_timeout` 是**字符串**（如 `"20s"`），
-> 不是整数秒。配置文件里请照示例写成 `"20s"`，不要写成 `20`。
+| 键 | 覆盖变量 | 默认与要求 |
+| --- | --- | --- |
+| `password_hash` | `SHIYI_AUTH_PASSWORD_HASH` | 空；正常模式必填，完整 bcrypt 编码，成本 10–14，生成使用 12 |
+| `state_dir` | `SHIYI_AUTH_STATE_DIR` | `~/.local/state/shiyi/auth`；容器 `/auth`；必须独立于记忆目录 |
+| `public_origin` | `SHIYI_AUTH_PUBLIC_ORIGIN` | 空；必须显式配置唯一 `scheme://host[:port]`，正常模式只允许 HTTPS |
+| `dev_anonymous` | `SHIYI_DEV_ANONYMOUS` | `false`；只有明确 `true` 开启开发匿名模式 |
 
----
+来源不能包含路径（包括尾斜杠）、用户信息、query、fragment 或多个来源，不从 Host、Referer 或转发头推导。
+认证环境变量**已设置即覆盖**配置文件；空值也覆盖，不能回落到旧凭据。开发布尔覆盖只接受 `true`/`false`。
+其他覆盖变量：`SHIYI_LISTEN` → listen、`SHIYI_DATA_DIR` → data_dir、`SHIYI_SHARD` → shard。
+
+开发匿名模式仅用于隔离的本地开发，仍要求明确来源并执行 Origin + CSRF 校验；允许 HTTP，页面明确标识开发模式。
+它不验证密码、不签发生产登录 Cookie。生产及容器验收不能以该模式代替安全登录。
+
+启动检查配置存在性、模型配置与密钥是否齐备、`rg`、数据目录、来源、哈希和认证目录权限/状态/单写者锁。
+任何错误在监听前拒绝启动；不因漏配、坏状态或权限不足自动匿名。一个认证目录只允许一个服务进程写入。
+
+## 登录、恢复与迁移
+
+- 单用户、无用户名/注册/邮箱找回；同一密码可以在多台设备建立独立登录会话。
+- 连续 **7 天**无有效使用过期，每次登录最长 **30 天**。正常服务重启复用认证卷，保留仍有效登录。
+- 有效使用是通过登录、来源、CSRF 与 JSON 类型校验的记忆 POST；之后即使业务 JSON 或模型失败也会推进闲置期限。
+  页面加载、健康检查、会话检查和失败鉴权不续期。绝对 30 天期限不滑动。
+- “退出当前设备”持久撤销当前登录；“退出所有设备”要求再次验证密码并撤销全部登录。
+- 忘记密码时，在服务器通过 `shiyi hash-password` 生成新哈希，替换配置/环境变量，停止旧服务后用新配置重启。
+  **即使同一密码重新哈希，编码变化也会作废全部旧登录会话**；不要将旧认证状态回滚作为恢复已撤销访问的方法。
+- 认证状态丢失会建立全新空状态，旧 Cookie 失效；状态损坏、权限不安全或不可读则启动失败，不开放访问。
+- 未成功提交的草稿只留当前页面内存；认证过期后重新登录不会自动重发，须主动提交。主动退出清空草稿和私人视图。
+  刷新不会恢复历史查询/回答；登录 Cookie 持续存在不表示保存了对话上下文。
+
+### 从旧 Bearer / CLI 迁移
+
+删除配置里的旧 `auth_token_env` 键，并从服务环境中**彻底取消** `SHIYI_AUTH_TOKEN`，不是仅置空。
+两者存在（包括空值）都会给出迁移错误。旧 Bearer token 不再授予访问资格。
+准备密码哈希、唯一 HTTPS 来源、独立认证目录，再用 Web 登录。
+一次性文本发送、REPL、客户端地址选项和客户端 token 读取均已移除；旧调用明确失败，不会静默发送原文。
 
 ## HTTP API
 
-只有一个业务端点。请求体固定是 `{"content":"..."}`。
+以下是 Web 所依赖的协议，不提供新的脚本客户端或长期 API token 产品。
+生产登录 Cookie 为 `__Host-shiyi-session`，bootstrap Cookie 为 `__Host-shiyi-csrf`：
+`Secure; HttpOnly; SameSite=Strict; Path=/`，无 Domain。浏览器脚本不读 Cookie，不把凭据存入 localStorage/sessionStorage。
 
-### `POST /messages`
+| 路由 | 行为 |
+| --- | --- |
+| `GET /auth/session` | 返回 `authenticated`、`mode`、`csrf_token`，未登录也可 bootstrap，不续期 |
+| `POST /auth/login` | JSON `{"password":"原样密码"}`，成功签发全新登录资格 |
+| `POST /auth/logout` | 空 body，204，撤销当前登录 |
+| `POST /auth/logout-all` | 同上 PasswordRequest，再次验证密码后撤销全部，204 |
+| `POST /messages` | JSON `{"content":"原文"}`，先认证再读业务 body/分类/存储 |
+| `GET /healthz` | 公开最小 `{"status":"ok"}`，不检查模型 |
+| `GET /` 与必要静态资源 | 公开登录界面，不嵌入私人数据 |
 
-```bash
-curl -sS -X POST http://127.0.0.1:8787/messages \
-  -H 'Content-Type: application/json' \
-  -d '{"content":"我下周一开始新的作息，每天 7 点起床。"}'
-```
+页面先同源 GET session 获取浏览器绑定的 bootstrap CSRF challenge，再携带 Cookie、唯一且与配置匹配的 `Origin`、
+`X-CSRF-Token` 和 `Content-Type: application/json` 发起 POST（包括退出）。登录成功后使用新会话的 CSRF token。
+缺失/错误/跨站来源或 CSRF 均拒绝；没有 CORS 授权，不盲信转发 IP 或转发来源。
+所有认证及私人业务响应为 `Cache-Control: no-store`；反向代理也不得缓存这些响应。
+密码不 trim、不归一化；空密码或超过 72 UTF-8 字节无效。密码端点 body 上限 4096 字节。
+登录与退出所有设备共享每进程全局限速：每 5 分钟最多 10 次实际密码尝试（成功也计数），429 带 `Retry-After`，不会永久锁定账号。
 
-#### 判定为记录 → `201`
+### 记忆业务响应不变
+
+记录 → 201：
 
 ```json
 {"kind":"record","time":"2026-11-04T09:12:33.481902417Z","version":1}
 ```
 
-`time` 就是这条记录的标识，可以直接拿去引用。
-
-#### 判定为查询 → `200`
+查询 → 200：
 
 ```json
-{
-  "kind": "query",
-  "answer": "你下周一开始新的作息，每天 7 点起床。",
-  "citations": [
-    {
-      "time": "2026-11-04T09:12:33.481902417Z",
-      "content": "我下周一开始新的作息，每天 7 点起床。"
-    }
-  ],
-  "status": "ok"
-}
+{"kind":"query","answer":"你提到过茶。","citations":[{"time":"2026-11-04T09:12:33.481902417Z","content":"我喜欢喝茶"}],"status":"ok"}
 ```
 
-`status` 有三种取值：
-
-| status | 含义 |
-| --- | --- |
-| `ok` | 正常回答。 |
-| `budget_exhausted` | 检索预算用完了，用已有证据做了「立即回答」。回答可能不完整，引用仍然合法。 |
-| `no_match` | 本次检索没有任何命中。固定回答「没有找到相关记忆」，`citations` 为空。 |
-
-检索不到时：
+查询 `status` 为 `ok`、`budget_exhausted`（预算耗尽，引用仍合法）或 `no_match`：
 
 ```json
 {"kind":"query","answer":"没有找到相关记忆","citations":[],"status":"no_match"}
 ```
 
-#### 无法识别 → `200`
-
-```json
-{"kind":"unrecognized"}
-```
-
-这条输入没有被保存，也没有获得证据资格。
-
-#### 出错
-
-所有非 2xx 响应的形状统一：
+无法识别 → 200 `{"kind":"unrecognized"}`，不保存、不授予证据资格。查询和回答也不持久化。
+统一错误形状：
 
 ```json
 {"error":{"code":"invalid_request","message":"content 不能为空"}}
@@ -342,193 +221,98 @@ curl -sS -X POST http://127.0.0.1:8787/messages \
 
 | HTTP | code | 含义 |
 | --- | --- | --- |
-| 400 | `invalid_request` | JSON 非法，或 `content` 为空。 |
-| 401 | `unauthorized` | 需要 token 但缺失或不匹配。 |
-| 413 | `request_too_large` | 请求体超过 `max_body_bytes`。 |
-| 500 | `storage_failed` | 写入或 fsync 失败。 |
-| 500 | `search_failed` | ripgrep 不可用或执行失败。 |
-| 500 | `internal_error` | 其它内部错误。 |
-| 502 | `invalid_citation` | 回答引用了本次检索没有返回过的记录。 |
-| 502 | `model_invalid_response` | 模型输出无法解析。 |
-| 503 | `model_unavailable` | 模型不可达、超时或返回非 2xx。 |
+| 400 | `invalid_request` | 非法 JSON/参数/Content-Type 或空原文 |
+| 401 | `unauthorized` | 缺失、过期、撤销、伪造登录或错误密码（仅 Bearer 也无效） |
+| 403 | `forbidden` | Origin / CSRF 拒绝 |
+| 413 | `request_too_large` | body 超限 |
+| 429 | `rate_limited` | 密码尝试限速，按 Retry-After 再试 |
+| 500 | `storage_failed` | 记忆写入或 fsync 失败 |
+| 500 | `search_failed` | 检索失败 |
+| 500 | `internal_error` | 其他内部错误 |
+| 502 | `invalid_citation` | 引用不在本次检索证据中 |
+| 502 | `model_invalid_response` | 模型输出非法 |
+| 503 | `model_unavailable` | 模型不可达/超时/非 2xx |
+| 503 | `auth_unavailable` | 认证状态无法安全读写；不得继续业务 |
 
-错误消息里不会出现原始模型响应体、密钥或完整原文。
+错误和日志不包含密码、哈希、Cookie/会话凭据、CSRF token、模型密钥、完整原文或模型原始响应。
 
-### `GET /healthz`
-
-进程存活就返回 `200`，**不**检查模型连通性。
-
-```bash
-curl http://127.0.0.1:8787/healthz
-# {"status":"ok"}
-```
-
-### `GET /`
-
-一个极简单页：输入框、当前消息列表、回答与引用。只调用 `POST /messages`，
-不往浏览器里存任何状态。
-
----
-
-## 命令行用法
-
-CLI 是 HTTP 服务的客户端，默认连 `http://127.0.0.1:8787`。
+## 服务管理命令
 
 ```bash
-# 一次性发送一条，然后退出。适合接脚本、快捷键。
-./shiyi "我下周一开始新的作息，每天 7 点起床。"
-
-# 连到别的服务地址
-./shiyi --server http://192.168.1.10:8787 "我的作息是怎样的？"
-
-# 交互式 REPL：逐行发送，/quit 退出
-./shiyi
-> 我下周一开始新的作息，每天 7 点起床。
-> /quit
-
-# 启动服务
 ./shiyi serve
+./shiyi hash-password
+./shiyi --help
+./shiyi --version
 ```
 
-一次性模式会打印记录时间，或者打印回答和它引用的记录。REPL 里同样是这两样输出。
+仅保留服务管理。哈希命令要求 TTY、不回显、双确认、拒绝参数及 non-TTY；误传参数也不回显可能的密码。
+它不加载 serve 配置、不调用模型；stdout 仅输出成本 12 的 bcrypt 哈希，提示和固定错误写 stderr。
+服务收到 SIGINT/SIGTERM 后先停止 HTTP，再释放认证状态资源。
 
-服务开了 Bearer 鉴权时，CLI 会自动从 `SHIYI_AUTH_TOKEN` 读 token 并带上
-`Authorization: Bearer <token>` 头，不用额外操作。
+## 数据格式与隐私
 
-浏览器里的极简页面**不支持** Bearer 鉴权：它用同源 `fetch` 调 `POST /messages`，
-不附加 `Authorization` 头，也不把 token 存到浏览器里。所以启用 `auth_token_env`
-之后，Web 页面会收到 `401 unauthorized`，此时请改用 CLI。这是有意的取舍——
-spec 明确不做登录页、账号体系和浏览器端持久化。
-
-CLI **不做**本地缓存、不做历史记录、不做多轮上下文。
-
----
-
-## 数据格式
-
-数据目录里是一堆 JSONL 文件，一行一条记忆条目，每行**恰好三个字段**：
+一行一条记忆，**恰好三个字段**：
 
 ```json
-{"version":1,"content":"我下周一开始新的作息，每天 7 点起床。","time":"2026-11-04T09:12:33.481902417Z"}
+{"version":1,"content":"我喜欢喝茶","time":"2026-11-04T09:12:33.481902417Z"}
 ```
 
-| 字段 | 含义 |
+- `version` 当前为 1；`content` 是逐字节保留、不 trim、不摘要的原文。
+- `time` 为服务端 UTC RFC3339Nano（固定九位小数），严格递增且唯一，是标识也是引用锚点。
+- monthly：`2026-11.jsonl`；weekly：`2026-W45.jsonl`；daily：`2026-11-04.jsonl`。UTC 分界。
+- 尾部不完整行移至 corrupt 目录再截断；中间损坏会拒绝启动，不静默丢失。
+
+JSONL 是唯一记忆真相源。认证状态是获准独立持久化的访问控制状态，不是记忆，不进入检索或引用。
+记忆和认证目录都不要静态发布；权限应仅允许运行身份和受信管理员访问。
+
+**JSONL 仍是明文**，没有应用层或端到端加密。宿主机加密磁盘保护关机/离线磁盘，不防运行中的受信管理员；
+备份应加密，解密密钥与备份分离保管。明文压缩包不是加密备份。登录和 HTTPS 都不能替代静态数据保护。
+
+## 已知限制与后续方向
+
+1. **无回答持久化**：查询、回答、模型原始响应与对话历史不保存；只有登录会话及必要认证状态独立持久化。
+2. **无幂等**：主动重复与网络重试都可能产生新记录，没有去重或幂等键。
+3. **无对话上下文**：查询必须自包含，不支持多轮追问。多设备登录不等于同步历史视图。
+4. **不支持附件**：没有图片、PDF、音频、OCR 或视觉模型。
+5. **跨换行检索仍有限制**：JSONL 的物理行和原文内部换行不同；本次不交付空白归一化修复，不宣称语义召回完整。
+6. **记录不可更正、不可删除**：当前只追加；矛盾记忆并列，不由模型裁决覆盖。
+7. **明文与外发边界**：允许敏感原文发送到配置的网关及上游模型；自定义网关不等于数据完全不外发。
+8. **模型故障不影响认证**：登录、注销、撤销、会话检查及存活仍可用；模型业务明确失败，不绕过分类保存原文，不离线回答或后台排队。
+9. **引用校验只能保证引用存在**：不能保证回答每句话都有依据或零幻觉，仍须核对原文。
+10. **不做向量检索**：现有字面匹配不能保证同义表达召回。
+11. 单用户、单进程写者；不做注册、角色、MFA、设备列表、多副本或多租户隔离。
+
+后续独立交付方向是检索正确性、提交幂等、逐项回答证据校验，以及删除/更正及备份遗忘语义；这些均非本次已实现能力。
+
+## 开发与门禁
+
+依赖 Go 1.26、ripgrep、Python 3、OpenSSL 和可分配 PTY 的环境。Go 依赖固定版本并提交 vendor，模型使用本地替身，不依赖真实密钥。
+构建容器还需 Docker 与基础镜像/系统软件包来源；测试不会修改实际部署。
+
+**`make check` 是唯一的本地门禁**，CI 执行同一目标；并行工作树期间按锁串行运行：
+
+```bash
+flock /tmp/shiyi-web-auth-make-check.lock make check
+make image-check
+```
+
+| check 步骤 | 内容 |
 | --- | --- |
-| `version` | 记录格式版本，v1 恒为 `1`。 |
-| `content` | 你提交的原文，**逐字节保留**，不做 trim、改写或摘要。 |
-| `time` | 服务端生成的 UTC 时间，RFC3339Nano 格式（固定九位小数）。 |
+| prereqs | rg / python3 / openssl |
+| verify-vendor | go mod verify、go mod vendor、vendor 无漂移 |
+| vet | `go vet ./...` |
+| compile | `go build ./...` |
+| test | `go test ./... -race -count=1` |
+| test-frozen | 版本固定、不可就地修改的冻结测试集 |
+| smoke | 真实二进制、TTY、临时 HTTPS 代理、Cookie jar、模型替身，安全配置/登录/业务/重启/撤销 |
+| readme-check | 配置、文档、镜像、错误码和服务管理命令交叉检查 |
 
-`time` 严格递增且唯一，既是这条记录的**唯一标识**，也是回答**引用**它的锚点。
-没有 `id`、没有 `kind`、没有附件字段。
+`make image-check` 实际构建镜像并运行非 root、独立卷、默认安全拒绝/登录/重启/撤销冒烟，不用匿名模式救绿。
+冒烟动态分配端口、按真实 HTTP 就绪继续，不使用固定启动延时；所有容器与数据仅为临时测试资源。
+这些检查不等于真实浏览器验收，也不证明你的公网代理配置安全。
 
-### 分片
+其他目标：`make build`、`make run`、`make test`、`make vet`、`make test-frozen`、`make smoke`、`make readme-check`、`make image`、`make fmt`、`make clean`。
+单独子目标只用于定位，不替代完整门禁。[冒烟脚本](<scripts/smoke.sh>)和[文档检查](<docs/check-readme.sh>)可直接运行；
+[冻结测试实现](<internal/frozen/frozen_test.go>)仍属于常规测试，冻结用例不能为迎合认证而修改。
 
-按 `shard` 配置切分文件，边界一律按 **UTC** 计算：
-
-| `shard` | 文件名 | 例 |
-| --- | --- | --- |
-| `monthly` | `YYYY-MM.jsonl` | `2026-11.jsonl` |
-| `weekly` | `YYYY-Www.jsonl`（ISO 周） | `2026-W45.jsonl` |
-| `daily` | `YYYY-MM-DD.jsonl` | `2026-11-04.jsonl` |
-
-### 崩溃恢复
-
-启动时会扫描所有分片：
-
-- 最后一行不是完整 JSON —— 把它挪到 `corrupt/<分片名>.<纳秒>.tail`，再把原文件截断到最后一个换行符。
-- 中间某行损坏 —— **启动失败**，报出文件名和行号，不静默丢数据。
-
-没有重建、压缩或索引步骤。备份就是拷贝数据目录。
-
----
-
-## 已知限制
-
-请认真读这一节 —— 下面每一条都是当前版本的**真实边界**，不是待办事项。
-
-1. **无回答持久化**。查询和回答不落盘：没有查询历史、没有回答档案、没有审计日志。重启服务后没有任何会话状态。
-2. **无幂等**。没有幂等键也没有去重。同一条内容发两次就写两行。网络抖动导致响应丢失时重发，可能产生重复记录。
-3. **无会话上下文**。每次查询必须自包含，模型看不到之前的对话，不支持多轮追问。
-4. **不支持附件**。v1 只存文本。图片、PDF、音频、OCR、视觉模型都不在范围内。
-5. **跨换行短语检索不到**。JSONL 会把换行转义成 `\n`，所以「先写这一句」和「再写这一句」这种跨行的短语无法命中。普通词语不受影响。
-6. **记录不可更正、不可删除**。记录是只追加的，没有编辑、没有删除、没有墓碑。写错了就再记一条，矛盾的内容会并列返回，系统不替你仲裁哪个是真的。
-7. **数据是明文 JSONL，没有加密**。谁能读到数据目录，谁就能读到你的全部记录。放在受控的机器上，别放在会同步到公共云盘的目录里。
-8. **模型不可用即服务不可用**。分类和回答都依赖 LLM，模型不可达、超时或返回非法结果时，服务返回 `503 model_unavailable`，**不会**降级成规则分类或假装回答。这次输入也不会被保存，你需要自己保留原文重发。
-9. **引用校验只能保证「引用存在」**。服务端会检查每个引用的 `time` 确实来自本次检索到的记录，但不保证回答里的**每一句话**都被引用支撑。模型仍可能说过头，请自己核对引用里的原文。
-10. **不做向量检索**。检索是字面匹配：关键词大小写不敏感地作为子串出现在原文里才算命中。换一种说法可能就查不到。
-11. **启用鉴权时 Web 页面不可用**。页面用同源 `fetch`，不附加 `Authorization` 头，也不把 token 存进浏览器。开了 `auth_token_env` 后请用 CLI。
-
----
-
-## 开发
-
-### 依赖
-
-- Go 1.26
-- 系统里有 `rg`（ripgrep）。检索靠它预筛文件，**没有它服务无法启动**。
-  装不上就用容器：`docker run --rm --entrypoint rg shiyi:latest --version`。
-- 依赖已经 vendor 进仓库，构建和测试**不需要网络**，也不需要 API key。
-
-### 门禁
-
-**`make check` 是唯一的门禁。** 它的步骤与 CI 的测试任务逐条对应，再加两项
-CI 不跑的仓库自检。说「绿了」之前跑它：
-
-```bash
-make check
-```
-
-它依次执行：
-
-| 步骤 | 内容 |
-| --- | --- |
-| `prereqs` | 确认 `rg` 在 PATH 里 |
-| `verify-vendor` | `go mod verify` + `go mod vendor` + 确认 `vendor/` 没有漂移 |
-| `vet` | `go vet ./...` |
-| `compile` | `go build ./...` |
-| `test` | `go test ./... -race -count=1` |
-| `test-frozen` | 只跑冻结测试集 |
-| `smoke` | 真实二进制 + 假模型的端到端冒烟 |
-| `readme-check` | 文档与配置的交叉一致性 |
-
-### 其他 Makefile 目标
-
-```bash
-make build         # 编译出 ./shiyi
-make run           # 编译并启动服务
-make test          # go test ./... -race -count=1
-make vet           # go vet ./...
-make test-frozen   # 只跑冻结测试集
-make image         # 构建容器镜像
-make image-check   # 构建镜像并在容器里验 rg 与 /healthz（CI 的容器任务）
-make fmt           # go fmt ./...
-make clean         # 删掉 ./shiyi
-```
-
-`make test`、`make vet`、`make test-frozen`、`make smoke`、`make readme-check`
-都可以单独跑——它们都在 `make check` 里，单独跑只用于定位失败。
-
-冻结测试集（`testdata/frozen/`）是 `go test ./... -race` 的一部分。
-
-### 单独跑一个脚本
-
-`scripts/smoke.sh` 会自己编译二进制到临时目录，不需要先 `make build`，
-也不需要网络或 API key：
-
-```bash
-bash scripts/smoke.sh
-```
-
-`docs/check-readme.sh` 交叉检查 `README.md`、`Dockerfile`、示例配置、错误码与
-CLI 子命令。它不依赖网络，也不依赖 Go 工具链；任何一处漂移都会打印 `[FAIL]`
-并以非 0 退出。改了这些文件之后跑一遍。
-
-### 部署相关的进一步说明
-
-容器部署、反向代理、systemd、备份等展开在 [`docs/deployment.md`](docs/deployment.md)。
-
----
-
-## 许可
-
-见仓库。
+更多容器、systemd、HTTPS、恢复和备份细节见[部署说明](<docs/deployment.md>)。

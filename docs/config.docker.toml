@@ -11,10 +11,6 @@ listen = "0.0.0.0:8787"
 data_dir = "/data"
 shard = "monthly"
 
-# 容器默认不鉴权。需要在局域网暴露时，用 -e SHIYI_AUTH_TOKEN=... 注入，
-# 该环境变量非空即启用 Bearer 鉴权。
-auth_token_env = "SHIYI_AUTH_TOKEN"
-
 max_body_bytes = 1048576
 
 [classifier]
@@ -36,3 +32,11 @@ max_search_calls = 3
 max_records = 20
 answer_timeout = "30s"
 request_timeout = "60s"
+
+# 默认安全：必须用环境变量或受保护配置提供哈希和唯一 HTTPS 来源。
+# 镜像不烘焙密码或哈希；空值拒绝启动，不回退匿名。
+[auth]
+password_hash = ""
+state_dir = "/auth"
+public_origin = ""
+dev_anonymous = false

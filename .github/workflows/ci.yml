@@ -10,59 +10,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
-
-      # The build shells out to ripgrep, so it has to be on PATH for the tests.
-      - name: Install ripgrep
+      - name: Install search and authenticated smoke prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y ripgrep
-          rg --version
-
-      - name: Verify vendored dependencies are consistent
-        run: go mod verify && go mod vendor && git diff --exit-code -- vendor/
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Build
-        run: go build ./...
-
-      # The frozen test set runs as part of the normal suite; it needs no
-      # network and no API key.
-      - name: Test
-        run: go test ./... -race -count=1
-
-      - name: Test frozen set explicitly
-        run: go test ./... -race -count=1 -run Frozen
+          sudo apt-get install -y ripgrep python3 openssl
+      # The exact local gate, including real process authentication and docs.
+      - name: Check
+        run: flock /tmp/shiyi-web-auth-make-check.lock make check
 
   container:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Build image
-        run: docker build -t shiyi:test .
-
-      - name: ripgrep is available in the image
-        run: docker run --rm --entrypoint rg shiyi:test --version
-
-      - name: Health check in container
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: Install TLS and terminal smoke prerequisites
         run: |
-          docker run -d --name shiyi-test -p 8787:8787 \
-            -e SHIYI_API_KEY=dummy \
-            -e SHIYI_DATA_DIR=/data \
-            shiyi:test
-          for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8787/healthz; then
-              echo "healthz ok"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "healthz never became healthy" >&2
-          docker logs shiyi-test >&2
-          exit 1
+          sudo apt-get update
+          sudo apt-get install -y python3 openssl
+      # Test-only credentials are generated at runtime; never anonymous mode.
+      - name: Authenticated container smoke
+        run: make image-check IMAGE=shiyi:test
