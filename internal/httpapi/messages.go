@@ -45,7 +45,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		// A judge that returns a verdict outside of the three known kinds
 		// has broken its contract. The input is not thrown away silently:
 		// the client is told that the request failed.
-		s.logger.Error("the judge returned an unknown verdict", slogString("kind", string(kind)))
+		s.logger.Error("the judge returned an unknown verdict")
 		s.writeError(w, api.CodeInternalError, "内部错误")
 	}
 }

@@ -264,51 +264,6 @@ func TestAPIKeyMissingReportsVariableName(t *testing.T) {
 	}
 }
 
-// TestAuthTokenIsReadFromNamedVariable checks the bearer-token indirection and
-// that an unset variable means authentication is off.
-func TestAuthTokenIsReadFromNamedVariable(t *testing.T) {
-	dir := t.TempDir()
-	body := `
-data_dir = "` + dir + `"
-auth_token_env = "TEST_AUTH_TOKEN"
-
-[answer]
-base_url = "https://example.test"
-model = "answer-model"
-api_key_env = "TEST_API_KEY"
-timeout = "30s"
-`
-	t.Setenv("TEST_API_KEY", "secret-value")
-	t.Setenv("TEST_AUTH_TOKEN", "bearer-token")
-
-	cfg, err := config.LoadFile(writeFile(t, body))
-	if err != nil {
-		t.Fatalf("LoadFile: %v", err)
-	}
-	if got, want := cfg.AuthToken(), "bearer-token"; got != want {
-		t.Fatalf("AuthToken() = %q, want %q", got, want)
-	}
-
-	t.Setenv("TEST_AUTH_TOKEN", "")
-	if got := cfg.AuthToken(); got != "" {
-		t.Fatalf("AuthToken() = %q, want empty when the variable is unset", got)
-	}
-}
-
-// TestAuthTokenEmptyWhenNotConfigured checks that no token means no auth.
-func TestAuthTokenEmptyWhenNotConfigured(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("TEST_API_KEY", "secret-value")
-
-	cfg, err := config.LoadFile(writeFile(t, strings.Replace(answerOnly, "%s", dir, 1)))
-	if err != nil {
-		t.Fatalf("LoadFile: %v", err)
-	}
-	if got := cfg.AuthToken(); got != "" {
-		t.Fatalf("AuthToken() = %q, want empty when auth_token_env is unset", got)
-	}
-}
-
 // TestExpandHome resolves a leading tilde.
 func TestExpandHome(t *testing.T) {
 	home, err := os.UserHomeDir()
@@ -355,6 +310,7 @@ func validConfig(t *testing.T) config.Config {
 		Timeout:   time.Second,
 	}
 	cfg.Classifier = cfg.Answer
+	cfg.Auth = config.AuthConfig{DevAnonymous: true, PublicOrigin: "http://memory.test"}
 	return cfg
 }
 

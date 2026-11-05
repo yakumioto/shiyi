@@ -93,8 +93,8 @@ func (s *Server) withRequestLog(next http.Handler) http.Handler {
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 		s.logger.Info("request",
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
+			slog.String("method", logMethod(r.Method)),
+			slog.String("path", logRoute(r.URL.Path)),
 			slog.Int("status", rec.status),
 			slog.Duration("duration", time.Since(start)),
 		)
@@ -121,4 +121,23 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 		r.written = true
 	}
 	return r.ResponseWriter.Write(b)
+}
+
+// Only fixed route/method labels enter logs. Unknown paths and verbs are
+// attacker-controlled and may contain credentials or private original text.
+func logRoute(path string) string {
+	switch path {
+	case "/", "/app.js", "/style.css", "/healthz", "/messages", api.PathAuthSession, api.PathAuthLogin, api.PathAuthLogout, api.PathAuthLogoutAll:
+		return path
+	default:
+		return "unmatched"
+	}
+}
+func logMethod(method string) string {
+	switch method {
+	case "GET", "POST", "HEAD", "OPTIONS", "PUT", "DELETE", "PATCH":
+		return method
+	default:
+		return "other"
+	}
 }

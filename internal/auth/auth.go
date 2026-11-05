@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -30,16 +31,18 @@ type loginSession struct {
 	CSRF     string    `json:"csrf"`
 }
 type module struct {
-	mu       sync.Mutex
-	cfg      config.AuthConfig
-	now      func() time.Time
-	origin   string
-	key      []byte
-	sessions map[string]loginSession
-	closed   bool
-	failed   bool
-	root     *os.Root
-	lock     *os.File
+	mu          sync.Mutex
+	cfg         config.AuthConfig
+	now         func() time.Time
+	origin      string
+	key         []byte
+	sessions    map[string]loginSession
+	windowStart time.Time
+	attempts    int
+	closed      bool
+	failed      bool
+	root        *os.Root
+	lock        *os.File
 }
 
 var _ NewFunc = New
@@ -301,8 +304,25 @@ func (m *module) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(204)
 		return
 	}
+	// Never hold the global authorization lock while waiting for client bytes.
+	// Revalidate after the read: another request may revoke or expire this session.
+	m.mu.Unlock()
 	body := http.MaxBytesReader(w, r.Body, MaxAuthBodyBytes)
 	raw, err := io.ReadAll(body)
+	m.mu.Lock()
+	if m.closed || m.failed || !m.stateSafe() {
+		fail(w, api.CodeAuthUnavailable)
+		return
+	}
+	id, s, logged = m.session(r)
+	if r.URL.Path == api.PathAuthLogoutAll && !logged {
+		fail(w, api.CodeUnauthorized)
+		return
+	}
+	if !m.sourceOK(r, true) || !m.csrfOK(r, s, logged) {
+		fail(w, api.CodeForbidden)
+		return
+	}
 	if err != nil {
 		if _, ok := err.(*http.MaxBytesError); ok {
 			fail(w, api.CodeRequestTooLarge)
@@ -312,11 +332,53 @@ func (m *module) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input api.PasswordRequest
-	if err := json.Unmarshal(raw, &input); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	var fields map[string]json.RawMessage
+	if dec.Decode(&input) != nil || dec.Decode(new(any)) != io.EOF || json.Unmarshal(raw, &fields) != nil || fields == nil || bytes.Equal(bytes.TrimSpace(fields["password"]), []byte("null")) {
 		fail(w, api.CodeInvalidRequest)
 		return
 	}
-	if input.Password == "" || len(input.Password) > MaxPasswordBytes || bcrypt.CompareHashAndPassword([]byte(m.cfg.PasswordHash), []byte(input.Password)) != nil {
+
+	now := m.now()
+	if m.windowStart.IsZero() || !now.Before(m.windowStart.Add(PasswordAttemptWindow)) {
+		m.windowStart = now
+		m.attempts = 0
+	}
+	if m.attempts >= PasswordAttemptLimit {
+		remaining := m.windowStart.Add(PasswordAttemptWindow).Sub(now)
+		seconds := int64((remaining + time.Second - 1) / time.Second)
+		if seconds < 1 {
+			seconds = 1
+		}
+		w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
+		fail(w, api.CodeRateLimited)
+		return
+	}
+	m.attempts++
+	if input.Password == "" || len(input.Password) > MaxPasswordBytes {
+		fail(w, api.CodeUnauthorized)
+		return
+	}
+	// Attempts were reserved atomically above; expensive comparisons do not block
+	// session checks or revocation. At most ten can start in one fixed window.
+	m.mu.Unlock()
+	passwordErr := bcrypt.CompareHashAndPassword([]byte(m.cfg.PasswordHash), []byte(input.Password))
+	m.mu.Lock()
+	if m.closed || m.failed || !m.stateSafe() {
+		fail(w, api.CodeAuthUnavailable)
+		return
+	}
+	id, s, logged = m.session(r)
+	if r.URL.Path == api.PathAuthLogoutAll && !logged {
+		fail(w, api.CodeUnauthorized)
+		return
+	}
+	if !m.sourceOK(r, true) || !m.csrfOK(r, s, logged) {
+		fail(w, api.CodeForbidden)
+		return
+	}
+	if passwordErr != nil {
 		fail(w, api.CodeUnauthorized)
 		return
 	}

@@ -57,6 +57,7 @@ type authHarness struct {
 	judge  *fakeJudge
 	memory *fakeStore
 	logs   *bytes.Buffer
+	wrap   func(http.Handler) http.Handler
 }
 type browser struct {
 	h      *authHarness
@@ -83,7 +84,11 @@ func (h *authHarness) start() {
 		h.t.Fatal(err)
 	}
 	h.app = app
-	h.server = httptest.NewTLSServer(app.Handler())
+	handler := app.Handler()
+	if h.wrap != nil {
+		handler = h.wrap(handler)
+	}
+	h.server = httptest.NewTLSServer(handler)
 }
 func (h *authHarness) stop() {
 	if h.server != nil {
@@ -159,6 +164,39 @@ func requireStatus(t *testing.T, res *http.Response, raw []byte, want int) {
 	if res.StatusCode != want {
 		t.Fatalf("status=%d want=%d body=%s", res.StatusCode, want, raw)
 	}
+}
+
+func TestPasswordAttemptsShareRecoverableGlobalWindow(t *testing.T) {
+	h := newAuthHarness(t)
+	b := h.browser()
+	b.status(false)
+	res, raw := b.login(loginPassword)
+	requireStatus(t, res, raw, 200) // success consumes one
+	for i := 1; i < 10; i++ {
+		path := api.PathAuthLogin
+		if i%2 == 0 {
+			path = api.PathAuthLogoutAll
+		}
+		res, raw = b.request("POST", path, `{"password":"wrong"}`, func(r *http.Request) { r.Header.Set("X-Forwarded-For", strings.Repeat("1", i)) })
+		requireStatus(t, res, raw, 401)
+	}
+	// A different browser and forged forwarding metadata cannot split the budget.
+	other := h.browser()
+	other.status(false)
+	res, raw = other.login(loginPassword)
+	requireStatus(t, res, raw, 429)
+	if res.Header.Get("Retry-After") != "300" {
+		t.Fatalf("Retry-After=%q", res.Header.Get("Retry-After"))
+	}
+	h.clock.advance(5*time.Minute - time.Nanosecond)
+	res, raw = b.login(loginPassword)
+	requireStatus(t, res, raw, 429)
+	if res.Header.Get("Retry-After") != "1" {
+		t.Fatalf("Retry-After=%q", res.Header.Get("Retry-After"))
+	}
+	h.clock.advance(time.Nanosecond)
+	res, raw = b.login(loginPassword)
+	requireStatus(t, res, raw, 200)
 }
 
 func TestSessionsAndRevocationsSurviveRestart(t *testing.T) {
