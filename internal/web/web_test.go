@@ -150,18 +150,8 @@ func TestAppJSHandlesEveryResponseKind(t *testing.T) {
 	}
 }
 
-func TestAppJSBuildsEndpointFromPageURL(t *testing.T) {
-	js := appJS(t)
-	if !strings.Contains(js, "new URL('messages', window.location.href)") {
-		t.Error("app.js 必须基于当前页面地址推导 /messages 端点")
-	}
-	if !strings.Contains(js, "method: 'POST'") {
-		t.Error("app.js 必须以 POST 发送")
-	}
-	if !strings.Contains(js, "JSON.stringify({content: content})") {
-		t.Error("app.js 请求体必须是 {content}")
-	}
-}
+// API URL, method and payload are exercised by tests/browser against the real
+// HTTPS server. Do not bind them to variable names or JSON.stringify spelling.
 
 func TestStaticAssetsHaveNoExternalResources(t *testing.T) {
 	for _, path := range []string{"/index.html", "/style.css"} {
