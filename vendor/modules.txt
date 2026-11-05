@@ -4,3 +4,5 @@ github.com/pelletier/go-toml/v2
 github.com/pelletier/go-toml/v2/internal/parserbridge
 github.com/pelletier/go-toml/v2/internal/tracker
 github.com/pelletier/go-toml/v2/unstable
+# golang.org/x/crypto v0.58.0
+## explicit; go 1.26.0
