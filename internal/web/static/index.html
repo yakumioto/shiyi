@@ -10,10 +10,29 @@
 <main class="page">
   <header class="page-head">
     <h1 class="title">Shiyi</h1>
-    <p class="lede">Shiyi 是一个单用户的个人记忆系统。说一句话，它要么把它记下来，要么从你已有的记忆里找出答案。页面只显示当前会话，刷新后不留任何痕迹。</p>
+    <p class="lede">Shiyi 是一个单用户的个人记忆系统。说一句话，它要么把它记下来，要么从你已有的记忆里找出答案。登录会话不等于对话上下文：页面展示与草稿仅留在本页内存，刷新不恢复历史；已记录的原文仍保存在服务端。</p>
   </header>
 
-  <ul id="messages" class="messages" role="log" aria-live="polite" aria-label="当前会话">
+  <p id="auth-status" role="status" aria-live="polite">正在检查登录状态……</p>
+  <button id="retry-session" type="button" hidden>重新检查登录状态</button>
+  <form id="login-form" class="auth-form" method="post" action="/auth/login" hidden>
+    <label for="password">登录密码</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <button id="login" type="submit">登录</button>
+  </form>
+
+  <section id="workspace" hidden aria-label="本页私人展示">
+  <div class="session-actions">
+    <button id="logout" type="button">退出当前设备</button>
+    <button id="show-logout-all" type="button">退出所有设备…</button>
+  </div>
+  <form id="logout-all-form" class="auth-form" method="post" action="/auth/logout-all" hidden>
+    <label for="confirm-password">再次验证密码，将退出包括当前设备在内的所有设备</label>
+    <input id="confirm-password" type="password" autocomplete="current-password" required>
+    <button id="logout-all" type="submit">确认退出所有设备</button>
+    <button id="cancel-logout-all" type="button">取消</button>
+  </form>
+  <ul id="messages" class="messages" role="log" aria-live="polite" aria-label="本页临时展示">
     <li class="msg msg-hint">上面还没有内容。发一句话试试：想记住的事，或者想问的问题。</li>
   </ul>
 
@@ -22,6 +41,7 @@
     <textarea id="input" class="composer-input" rows="3" placeholder="想记住的事，或想问的问题……" aria-label="输入"></textarea>
     <button id="send" class="composer-send" type="submit">发送</button>
   </form>
+  </section>
 </main>
 <script src="app.js"></script>
 </body>
