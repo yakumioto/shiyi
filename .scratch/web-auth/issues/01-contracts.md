@@ -1,7 +1,7 @@
 # 01: 冻结认证跨包接缝
 
 Status: ready-for-agent
-Execution: claimed
+Execution: completed
 Blocked by: none
 
 ## 范围
@@ -12,10 +12,10 @@ Blocked by: none
 
 ## 验收
 
-- [ ] 已提交可编译的配置、公共类型/接口、构造器类型与 HTTP 请求响应约定。
-- [ ] seams.md 明确包归属、依赖方向、路由、配置和错误映射、来源/CSRF 协议。
-- [ ] 没有在接缝阶段改变现有授权行为；`make check` 通过。
+- [x] 已提交可编译的配置、公共类型/接口、构造器类型与 HTTP 请求响应约定。
+- [x] seams.md 明确包归属、依赖方向、路由、配置和错误映射、来源/CSRF 协议。
+- [x] 没有在接缝阶段改变现有授权行为；`make check` 通过。
 
 ## Comments
 
-待实施。
+已完成。实现提交 `ef895a1`，集成提交 `3c965b4`，分支 `feat/web-auth`。真实 JSON 与错误映射测试分别经历红灯→绿灯；合并后 `make check` exit 0，包含 race、冻结集、进程 smoke 和 185 项文档检查。运行授权未切换，没有占位 auth.New。02 开工前 Lead 仅调整组装责任：真实 auth.New 与服务关闭接入归 02，以确保后端票门禁可独立通过；冻结接口不变。容器/浏览器的新认证验收由后续票负责，本票未声称完成。
