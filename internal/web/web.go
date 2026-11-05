@@ -1,13 +1,12 @@
 // Package web serves Shiyi's minimal browser interface.
 //
 // The package owns one self-contained page: an input box, a send button and
-// the list of messages exchanged in the current session. Everything the page
-// needs is embedded into the binary, so it works without a network, without a
-// CDN and without a build step.
+// the list of inputs and answers displayed in this page's memory. Static assets
+// are embedded into the binary: no CDN or frontend build step is needed.
 //
 // The package deliberately depends on no other internal package. The HTTP
 // layer mounts it with httpapi.Server.HandlerWithWeb, and the page talks to
-// the API itself through POST /messages.
+// the same-origin /auth/ endpoints and POST /messages directly.
 package web
 
 import (
@@ -30,8 +29,8 @@ var assets = mustSub(files, "static")
 // every method other than GET is a 405.
 //
 // The returned handler holds no state: it never reads or writes browser
-// storage, never caches messages and never talks to the API. Each request
-// from the page is a self-contained POST /messages.
+// storage, never caches private inputs or answers and never calls the API itself.
+// The page consumes the authentication API and sends independent POST /messages.
 func Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", serveIndex)
