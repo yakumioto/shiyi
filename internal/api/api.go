@@ -87,13 +87,17 @@ func HTTPStatusForCode(code string) int {
 		return http.StatusBadRequest
 	case CodeUnauthorized:
 		return http.StatusUnauthorized
+	case CodeForbidden:
+		return http.StatusForbidden
+	case CodeRateLimited:
+		return http.StatusTooManyRequests
 	case CodeRequestTooLarge:
 		return http.StatusRequestEntityTooLarge
 	case CodeStorageFailed, CodeSearchFailed, CodeInternalError:
 		return http.StatusInternalServerError
 	case CodeInvalidCitation, CodeModelInvalidResponse:
 		return http.StatusBadGateway
-	case CodeModelUnavailable:
+	case CodeModelUnavailable, CodeAuthUnavailable:
 		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError

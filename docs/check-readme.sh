@@ -93,7 +93,8 @@ done
 
 section "1. 配置键与 internal/config/config.go 的 toml tag 双向对齐"
 
-CONFIG_TAGS=$(grep -oE 'toml:"[a-z_]+"' internal/config/config.go \
+# 配置公共类型可分文件声明；认证接缝暂未接入运行，但示例仍需覆盖其名称。
+CONFIG_TAGS=$(grep -h -oE 'toml:"[a-z_]+"' internal/config/config.go internal/config/auth_contract.go \
 	| sed 's/toml:"//; s/"$//' | sort -u)
 
 # 标量键：形如 key = value
