@@ -271,9 +271,10 @@ with tempfile.TemporaryDirectory(prefix='shiyi-smoke-') as directory:
             docker('rm', '-v', container)
             container = None
 
-    def browser(jar=None):
-        if jar is None:
-            jar = http.cookiejar.CookieJar()
+    def browser(cookies=()):
+        jar = http.cookiejar.CookieJar()
+        for cookie in cookies:
+            jar.set_cookie(copy.copy(cookie))
         return urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=client_tls), urllib.request.HTTPCookieProcessor(jar)), jar
 
     def request(client, path, expected=200, body=None, token=None, request_origin=origin, extra=None):
@@ -377,11 +378,13 @@ with tempfile.TemporaryDirectory(prefix='shiyi-smoke-') as directory:
         stop()
         start()
         check(request(client, '/auth/session')['authenticated'], 'normal restart lost login or failed to release state lock')
-        revoked_client, _ = browser(copy.deepcopy(jar))
+        revoked_cookies = tuple(copy.copy(cookie) for cookie in jar)
+        revoked_client, _ = browser(revoked_cookies)
         request(client, '/auth/logout', 204, body='', token=csrf)
         request(revoked_client, '/messages', 401, body={'content': ORIGINAL}, token=csrf)
         stop()
         start()
+        revoked_client, _ = browser(revoked_cookies)
         check(not request(revoked_client, '/auth/session')['authenticated'], 'copied revoked cookie revived after restart')
         csrf = login(client, jar)  # Still works while the fake model is unavailable.
         request(client, '/auth/logout-all', 204, body={'password': PASSWORD}, token=csrf)
