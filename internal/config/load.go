@@ -94,6 +94,7 @@ type fileBudget struct {
 
 // fileConfig mirrors the whole TOML file.
 type fileConfig struct {
+	Auth         *AuthConfig `toml:"auth"`
 	Listen       *string     `toml:"listen"`
 	DataDir      *string     `toml:"data_dir"`
 	Shard        *string     `toml:"shard"`
@@ -172,6 +173,14 @@ func build(file fileConfig) Config {
 			AnswerTimeout:  DefaultAnswerTimeout,
 			RequestTimeout: DefaultRequestTimeout,
 		},
+	}
+
+	cfg.Auth.StateDir = DefaultAuthStateDir
+	if file.Auth != nil {
+		cfg.Auth = *file.Auth
+		if cfg.Auth.StateDir == "" {
+			cfg.Auth.StateDir = DefaultAuthStateDir
+		}
 	}
 
 	if file.Listen != nil {

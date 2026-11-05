@@ -132,6 +132,10 @@ listen = "127.0.0.1:18924"
 data_dir = "$DATA"
 shard = "monthly"
 
+[auth]
+dev_anonymous = true
+public_origin = "http://127.0.0.1:18924"
+
 [answer]
 base_url = "http://127.0.0.1:$LLM_PORT"
 model = "fake-model"
@@ -165,8 +169,12 @@ H=$(curl -sS -w '\n%{http_code}' http://127.0.0.1:18924/healthz)
 check "healthz status" "200" "$H"
 check "healthz body" '"status":"ok"' "$H"
 
+SESSION=$(curl -fsS -c "$WORK/cookies" http://127.0.0.1:18924/auth/session)
+CSRF=$(printf "%s" "$SESSION" | python3 -c 'import sys,json;print(json.load(sys.stdin)["csrf_token"])')
+AUTH=(-b "$WORK/cookies" -H "Origin: http://127.0.0.1:18924" -H "X-CSRF-Token: $CSRF")
+
 echo "== record =="
-R=$(curl -sS -X POST -H 'Content-Type: application/json' -d '{"content":"我喜欢喝茶"}' http://127.0.0.1:18924/messages)
+R=$(curl -sS "${AUTH[@]}" -X POST -H 'Content-Type: application/json' -d '{"content":"我喜欢喝茶"}' http://127.0.0.1:18924/messages)
 check "record kind" '"kind":"record"' "$R"
 check "record version" '"version":1' "$R"
 
@@ -178,13 +186,13 @@ check "row has time" '"time":"' "$ROW"
 
 echo "== unrecognized writes nothing =="
 BEFORE=$(cat "$DATA"/*.jsonl | wc -l)
-U=$(curl -sS -X POST -H 'Content-Type: application/json' -d '{"content":"SKIP:随便聊聊"}' http://127.0.0.1:18924/messages)
+U=$(curl -sS "${AUTH[@]}" -X POST -H 'Content-Type: application/json' -d '{"content":"SKIP:随便聊聊"}' http://127.0.0.1:18924/messages)
 check "unrecognized kind" '"kind":"unrecognized"' "$U"
 AFTER=$(cat "$DATA"/*.jsonl | wc -l)
 if [[ "$BEFORE" == "$AFTER" ]]; then echo "  PASS  unrecognized wrote no row"; else echo "  FAIL  unrecognized wrote a row"; fail=$((fail+1)); fi
 
 echo "== query with citation =="
-Q=$(curl -sS -X POST -H 'Content-Type: application/json' -d '{"content":"QUERY:我喜欢什么茶？"}' http://127.0.0.1:18924/messages)
+Q=$(curl -sS "${AUTH[@]}" -X POST -H 'Content-Type: application/json' -d '{"content":"QUERY:我喜欢什么茶？"}' http://127.0.0.1:18924/messages)
 check "query kind" '"kind":"query"' "$Q"
 check "query status ok" '"status":"ok"' "$Q"
 check "citation carries original text" '我喜欢喝茶' "$Q"
@@ -194,12 +202,12 @@ AFTER2=$(cat "$DATA"/*.jsonl | wc -l)
 if [[ "$AFTER" == "$AFTER2" ]]; then echo "  PASS  query wrote no row"; else echo "  FAIL  query wrote a row"; fail=$((fail+1)); fi
 
 echo "== empty content is 400 =="
-E=$(curl -sS -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"content":"   "}' http://127.0.0.1:18924/messages)
+E=$(curl -sS "${AUTH[@]}" -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"content":"   "}' http://127.0.0.1:18924/messages)
 check "empty content 400" "400" "$E"
 check "empty content code" '"code":"invalid_request"' "$E"
 
 echo "== malformed JSON is 400 =="
-M=$(curl -sS -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d '{not json' http://127.0.0.1:18924/messages)
+M=$(curl -sS "${AUTH[@]}" -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d '{not json' http://127.0.0.1:18924/messages)
 check "bad json 400" "400" "$M"
 
 echo "== web page served =="

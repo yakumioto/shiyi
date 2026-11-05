@@ -18,6 +18,7 @@ import (
 
 	"shiyi/internal/answer"
 	"shiyi/internal/api"
+	"shiyi/internal/auth"
 	"shiyi/internal/classify"
 	"shiyi/internal/config"
 	"shiyi/internal/store"
@@ -38,6 +39,8 @@ const DefaultRequestTimeout = 60 * time.Second
 // already wrapped by the judge and the answerer, so the API key never reaches
 // this package.
 type Deps struct {
+	// Auth is required; anonymous development is an explicit real module mode.
+	Auth auth.Module
 	// Config is the loaded configuration. Only the fields that describe the
 	// wire behaviour are used: AuthTokenEnv, MaxBodyBytes and
 	// Budget.RequestTimeout.
@@ -73,6 +76,7 @@ type Server struct {
 	mu  sync.RWMutex
 	web http.Handler
 
+	auth    auth.Module
 	handler http.Handler
 }
 
@@ -84,6 +88,9 @@ type Server struct {
 // configured. The API key is deliberately not checked here; reading it is
 // the job of the model client and of the configuration loader.
 func New(d Deps) (*Server, error) {
+	if d.Auth == nil {
+		return nil, errors.New("httpapi: auth is required")
+	}
 	if d.Judge == nil {
 		return nil, errors.New("httpapi: judge is required")
 	}
@@ -114,6 +121,7 @@ func New(d Deps) (*Server, error) {
 
 	s := &Server{
 		cfg:            d.Config,
+		auth:           d.Auth,
 		judge:          d.Judge,
 		store:          d.Store,
 		answerer:       d.Answerer,
@@ -123,7 +131,8 @@ func New(d Deps) (*Server, error) {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /messages", s.handleMessages)
+	mux.Handle("/auth/", d.Auth)
+	mux.Handle("POST /messages", d.Auth.Protect(http.HandlerFunc(s.handleMessages)))
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	// Everything else belongs to the web interface when one is mounted. The
 	// web handler owns its whole path space (the page and its assets), so it
@@ -192,3 +201,6 @@ func (s *Server) handleWebOrNotFound(w http.ResponseWriter, r *http.Request) {
 func (s *Server) writeNotFound(w http.ResponseWriter) {
 	s.writeJSON(w, http.StatusNotFound, apiErrorResponse(api.CodeInvalidRequest, "没有这个接口"))
 }
+
+// Close releases authentication resources after HTTP shutdown.
+func (s *Server) Close() error { return s.auth.Close() }

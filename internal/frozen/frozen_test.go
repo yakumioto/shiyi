@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"shiyi/internal/answer"
+	"shiyi/internal/api"
+	"shiyi/internal/auth"
 	"shiyi/internal/classify"
 	"shiyi/internal/config"
 	"shiyi/internal/frozen"
@@ -129,7 +131,7 @@ func runClassifyCase(t *testing.T, tc frozen.ClassifyCase) {
 		t.Fatalf("encode request: %v", err)
 	}
 
-	resp, err := http.Post(server.URL+"/messages", "application/json", bytes.NewReader(body))
+	resp, err := postWithCSRF(t, server, bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /messages: %v", err)
 	}
@@ -231,7 +233,7 @@ func runQueryCase(t *testing.T, tc frozen.QueryCase) {
 		t.Fatalf("encode request: %v", err)
 	}
 
-	resp, err := http.Post(server.URL+"/messages", "application/json", bytes.NewReader(body))
+	resp, err := postWithCSRF(t, server, bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /messages: %v", err)
 	}
@@ -422,7 +424,13 @@ func newHandler(t *testing.T, judgeClient, answerClient llm.Client, memory store
 	cfg := newTestConfig(dir)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
+	module, err := auth.New(config.AuthConfig{DevAnonymous: true, PublicOrigin: "http://memory.test"}, auth.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = module.Close() })
 	server, err := httpapi.New(httpapi.Deps{
+		Auth:   module,
 		Config: cfg,
 		Judge:  classify.New(judgeClient, cfg.Classifier.Model, cfg.Classifier.Temperature),
 		Store:  memory,
@@ -436,6 +444,7 @@ func newHandler(t *testing.T, judgeClient, answerClient llm.Client, memory store
 	if err != nil {
 		t.Fatalf("httpapi.New: %v", err)
 	}
+	t.Cleanup(func() { _ = server.Close() })
 	return server.Handler()
 }
 
@@ -453,4 +462,28 @@ func newTestServer(t *testing.T, judgeClient, answerClient llm.Client) (*httptes
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	return server, dir
+}
+
+func postWithCSRF(t *testing.T, s *httptest.Server, body io.Reader) (*http.Response, error) {
+	t.Helper()
+	session, err := s.Client().Get(s.URL + api.PathAuthSession)
+	if err != nil {
+		return nil, err
+	}
+	defer session.Body.Close()
+	var state api.SessionResponse
+	if err := json.NewDecoder(session.Body).Decode(&state); err != nil {
+		return nil, err
+	}
+	r, err := http.NewRequest("POST", s.URL+"/messages", body)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range session.Cookies() {
+		r.AddCookie(c)
+	}
+	r.Header.Set("Origin", "http://memory.test")
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set(api.HeaderCSRFToken, state.CSRFToken)
+	return s.Client().Do(r)
 }
