@@ -692,6 +692,7 @@ func TestNewNeedsItsCollaborators(t *testing.T) {
 		name string
 		deps httpapi.Deps
 	}{
+		{name: "no auth", deps: httpapi.Deps{Config: cfg, Judge: &fakeJudge{}, Store: &fakeStore{}, Answerer: &fakeAnswerer{}}},
 		{
 			name: "no judge",
 			deps: httpapi.Deps{Config: cfg, Store: &fakeStore{}, Answerer: &fakeAnswerer{}},
@@ -710,6 +711,9 @@ func TestNewNeedsItsCollaborators(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			if tt.name != "no auth" {
+				tt.deps.Auth = developmentAuth(t)
+			}
 			if _, err := httpapi.New(tt.deps); err == nil {
 				t.Fatalf("New returned no error, want one")
 			}

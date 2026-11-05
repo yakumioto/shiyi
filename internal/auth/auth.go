@@ -341,7 +341,7 @@ func (m *module) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := m.now()
-	if m.windowStart.IsZero() || !now.Before(m.windowStart.Add(PasswordAttemptWindow)) {
+	if m.attempts == 0 || !now.Before(m.windowStart.Add(PasswordAttemptWindow)) {
 		m.windowStart = now
 		m.attempts = 0
 	}

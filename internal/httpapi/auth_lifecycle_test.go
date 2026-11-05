@@ -13,6 +13,7 @@ import (
 	"shiyi/internal/api"
 	"shiyi/internal/auth"
 	"shiyi/internal/config"
+	"shiyi/internal/llm"
 )
 
 func TestIdleDeadlineIsNotExtendedByPollingOrRejectedRequests(t *testing.T) {
@@ -41,21 +42,31 @@ func TestIdleDeadlineIsNotExtendedByPollingOrRejectedRequests(t *testing.T) {
 }
 
 func TestAdmittedBusinessAttemptRefreshesDurablyBeforeDecoding(t *testing.T) {
-	h := newAuthHarness(t)
-	b := h.browser()
-	b.status(false)
-	res, raw := b.login(loginPassword)
-	requireStatus(t, res, raw, 200)
-	h.clock.advance(6 * 24 * time.Hour)
-	res, raw = b.request("POST", "/messages", "not JSON", nil)
-	requireStatus(t, res, raw, 400)
-	h.stop()
-	h.start()
-	h.clock.advance(6 * 24 * time.Hour)
-	b.status(true)
-	h.clock.advance(24 * time.Hour)
-	res, raw = b.request("POST", "/messages", `{"content":"idle"}`, nil)
-	requireStatus(t, res, raw, 401)
+	for _, kind := range []string{"invalid JSON", "model failure"} {
+		t.Run(kind, func(t *testing.T) {
+			h := newAuthHarness(t)
+			b := h.browser()
+			b.status(false)
+			res, raw := b.login(loginPassword)
+			requireStatus(t, res, raw, 200)
+			h.clock.advance(6 * 24 * time.Hour)
+			body, want := "not JSON", 400
+			if kind == "model failure" {
+				h.judge.err = llm.ErrUnavailable
+				body = `{"content":"model failed"}`
+				want = 503
+			}
+			res, raw = b.request("POST", "/messages", body, nil)
+			requireStatus(t, res, raw, want)
+			h.stop()
+			h.start()
+			h.clock.advance(6 * 24 * time.Hour)
+			b.status(true)
+			h.clock.advance(24 * time.Hour)
+			res, raw = b.request("POST", "/messages", `{"content":"idle"}`, nil)
+			requireStatus(t, res, raw, 401)
+		})
+	}
 }
 
 func TestActiveSessionStillExpiresAtThirtyDays(t *testing.T) {
@@ -99,6 +110,16 @@ func TestReloginRotatesCredentialsAndRejectsCopiedRevokedCookie(t *testing.T) {
 	b.status(true)
 	res, raw = b.login(loginPassword)
 	requireStatus(t, res, raw, 200)
+	var currentCookie *http.Cookie
+	currentToken := b.token
+	for _, c := range res.Cookies() {
+		if c.Name == auth.SessionCookieName {
+			currentCookie = c
+		}
+	}
+	if currentCookie == nil {
+		t.Fatal("relogin did not issue a credential")
+	}
 	for _, c := range res.Cookies() {
 		if c.Name == auth.SessionCookieName && c.Value == oldCookie.Value {
 			t.Fatal("login reused supplied credential")
@@ -109,14 +130,22 @@ func TestReloginRotatesCredentialsAndRejectsCopiedRevokedCookie(t *testing.T) {
 	requireStatus(t, res, raw, 401)
 	res, raw = b.request("POST", api.PathAuthLogout, "", nil)
 	requireStatus(t, res, raw, 204)
+	cleared := false
 	for _, c := range res.Cookies() {
+		if c.Name == auth.SessionCookieName {
+			cleared = true
+		}
 		if c.Name == auth.SessionCookieName && (c.MaxAge != -1 || !c.Secure || !c.HttpOnly || c.Path != "/" || c.Domain != "" || !c.Expires.Before(h.clock.Now())) {
 			t.Fatal("unsafe clearing cookie")
 		}
 	}
+	if !cleared {
+		t.Fatal("logout did not clear the browser credential")
+	}
 	h.stop()
 	h.start()
-	res, raw = replay.request("POST", "/messages", `{"content":"replay after restart"}`, func(r *http.Request) { r.AddCookie(oldCookie) })
+	replay.token = currentToken
+	res, raw = replay.request("POST", "/messages", `{"content":"replay after restart"}`, func(r *http.Request) { r.AddCookie(currentCookie) })
 	requireStatus(t, res, raw, 401)
 }
 
