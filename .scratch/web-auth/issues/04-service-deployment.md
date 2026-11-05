@@ -20,4 +20,4 @@ Blocked by: 02
 
 ## Comments
 
-待实施。
+实施中。原实施者在获准依赖扩围后长期没有代码改动，已停止；原工作树 `.worktrees/web-auth-04` / 分支 `tkt/web-auth-04` 明确放弃，保留到最终清理。替代实施者在全新 `.worktrees/web-auth-04-retry` / `tkt/web-auth-04-retry` 从集成 `12f2038` 继续，范围、接缝与验收不变。
