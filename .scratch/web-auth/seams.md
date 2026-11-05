@@ -11,14 +11,14 @@
 | [HTTP 线格式](<../../internal/api/auth.go>)、[错误码映射](<../../internal/api/api.go>) | 01 冻结；02/03 共用，不另造 JSON 形状 |
 | [HTTP 入口](<../../internal/httpapi/server.go>) | 02 挂载认证 handler，以 `Protect` 包住记忆业务；不重复实现认证判断 |
 | Web 静态资源及 Web 测试 | 03；只消费 HTTP 线格式，不读取 Cookie、不依赖认证内部结构 |
-| cmd / 部署 / 文档 / 示例 / CI | 04；构造并关闭认证模块，迁移旧 CLI；01 的示例说明仅为接缝兼容 |
+| cmd / 部署 / 文档 / 示例 / CI | 02 先完成真实认证模块的最小构造/关闭组装，以保证本票进程门禁可用；04 迁移旧 CLI 与部署文档；01 的示例说明仅为接缝兼容 |
 | 真实浏览器验收设施 | 05；测试 HTTPS Cookie、草稿、退出和页面恢复 |
 
 依赖方向：`config` 与 `api` 不依赖 `auth/httpapi`；`auth → config, api`；`httpapi → auth, api`；组合入口构造这些模块。`auth` 不依赖分类、模型、检索或记忆存储。`config.Validate` 负责配置存在性、布尔值、路径隔离、来源语法和旧配置迁移检查；bcrypt 编码/成本和状态安全检查由 `auth.New` 负责，不能为了校验从 `config` 反向 import `auth`。两阶段均在监听前完成，`auth.New` 也独立拒绝非法配置，便于直接构造的 HTTP 测试。持久格式、密码比较、随机源、限速内部协作者不形成额外公共 seam。
 
 02 实现 `func auth.New(config.AuthConfig, auth.Options) (auth.Module, error)`，其类型由 `auth.NewFunc` 固定；可用 `var _ auth.NewFunc = auth.New` 检查。`Module` 只有 `ServeHTTP`、`Protect(next)` 和生命周期 `Close()`。`Close` 幂等、释放单写者锁，必须在 HTTP 停止后调用；关闭后的模块不得放行。构造失败不启动 HTTP。
 
-02 在 `httpapi.Deps` 增加必填的 `Auth auth.Module`；nil 是构造错误，不能由 HTTP 层猜测匿名模式。保持 `httpapi.New(Deps) (*Server, error)`、`Handler()` 和 `HandlerWithWeb(http.Handler)` 形状。将 `/auth/` 交给 `Auth`，`POST /messages` 交给 `Auth.Protect`；健康检查与静态资源不包入 Protect。02 新增 `httpapi.Server.Close() error`，幂等关闭其持有的认证模块；调用者先完成 HTTP Shutdown 再 Close。04 在组合入口调用真实 `auth.New`，若 `httpapi.New` 失败须自行关闭模块，成功后由 Server.Close 释放；HTTP 测试也注册 Close，重构前关闭旧 server/module。HTTP 时间测试注入真实模块而非模拟认证结果。
+02 在 `httpapi.Deps` 增加必填的 `Auth auth.Module`；nil 是构造错误，不能由 HTTP 层猜测匿名模式。保持 `httpapi.New(Deps) (*Server, error)`、`Handler()` 和 `HandlerWithWeb(http.Handler)` 形状。将 `/auth/` 交给 `Auth`，`POST /messages` 交给 `Auth.Protect`；健康检查与静态资源不包入 Protect。02 新增 `httpapi.Server.Close() error`，幂等关闭其持有的认证模块；调用者先完成 HTTP Shutdown 再 Close。02 在组合入口调用真实 `auth.New`，若 `httpapi.New` 失败须自行关闭模块，成功后由 Server.Close 释放，服务层先完成 HTTP Shutdown 再释放；04 移除 CLI 时保留此组装与生命周期；HTTP 测试也注册 Close，重构前关闭旧 server/module。HTTP 时间测试注入真实模块而非模拟认证结果。
 
 ## 配置与密码
 
