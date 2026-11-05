@@ -14,6 +14,55 @@ import (
 	"shiyi/internal/llm"
 )
 
+func TestDevelopmentAnonymousStillRequiresBrowserCSRF(t *testing.T) {
+	h := newAuthHarness(t)
+	h.stop()
+	h.cfg.DevAnonymous = true
+	h.cfg.PublicOrigin = "http://memory.example"
+	h.cfg.PasswordHash = ""
+	h.start()
+	b := h.browser()
+	state := b.status(true)
+	if state.Mode != api.AuthModeDevelopmentAnonymous {
+		t.Fatal("development mode hidden")
+	}
+	res, raw := b.login("anything")
+	requireStatus(t, res, raw, 400)
+	res, raw = b.request("POST", api.PathAuthLogoutAll, `{"password":"anything"}`, nil)
+	requireStatus(t, res, raw, 400)
+	res, raw = b.request("POST", "/messages", `{"content":"explicit dev"}`, func(r *http.Request) { r.Header.Del(api.HeaderCSRFToken) })
+	requireStatus(t, res, raw, 403)
+	res, raw = b.request("POST", "/messages", `{"content":"explicit dev"}`, nil)
+	requireStatus(t, res, raw, 201)
+	res, raw = b.request("POST", api.PathAuthLogout, "", nil)
+	requireStatus(t, res, raw, 204)
+	res, raw = b.request("POST", "/messages", `{"content":"cleared challenge"}`, nil)
+	requireStatus(t, res, raw, 403)
+	b.status(true)
+}
+
+func TestForgedAndDuplicateCookiesNeverAuthorize(t *testing.T) {
+	h := newAuthHarness(t)
+	b := h.browser()
+	b.status(false)
+	res, raw := b.login(loginPassword)
+	requireStatus(t, res, raw, 200)
+	var credential string
+	for _, c := range res.Cookies() {
+		if c.Name == auth.SessionCookieName {
+			credential = c.Value
+		}
+	}
+	bare := &browser{h: h, client: h.server.Client(), token: b.token}
+	for _, cookie := range []string{"", auth.SessionCookieName + "=forged", auth.SessionCookieName + "=" + credential + "; " + auth.SessionCookieName + "=" + credential, "other=" + credential} {
+		res, raw = bare.request("POST", "/messages", `{"content":"must not reach model"}`, func(r *http.Request) { r.Header.Set("Cookie", cookie) })
+		requireStatus(t, res, raw, 401)
+	}
+	if h.judge.calls != 0 {
+		t.Fatal("forged credential reached business")
+	}
+}
+
 func TestEveryMutationRequiresOriginBoundCSRFAndJSON(t *testing.T) {
 	h := newAuthHarness(t)
 	b := h.browser()

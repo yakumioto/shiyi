@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -10,12 +9,6 @@ import (
 	"shiyi/internal/api"
 )
 
-// subtleEqual compares two secrets without leaking their difference through
-// the time the comparison takes.
-func subtleEqual(a, b string) bool {
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
-}
-
 // slogError returns a log attribute that describes err without leaking it.
 //
 // The detail of an error can carry the submitted text, the API key or the
@@ -23,11 +16,6 @@ func subtleEqual(a, b string) bool {
 // logged.
 func slogError(err error) slog.Attr {
 	return slog.String("error", errorKind(err))
-}
-
-// slogString returns a log attribute for a plain string.
-func slogString(key, value string) slog.Attr {
-	return slog.String(key, value)
 }
 
 // errorKind names the kind of a failure without repeating its detail.
@@ -85,7 +73,7 @@ func apiErrorResponse(code, message string) api.ErrorResponse {
 
 // withRequestLog logs one line per request.
 //
-// The line holds the method, the path, the status and the duration. It does
+// The line holds fixed method/route labels, status and duration. It does
 // not hold the submitted content: the original text must not reach the log.
 func (s *Server) withRequestLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

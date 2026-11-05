@@ -14,8 +14,8 @@ import (
 
 // handleMessages serves POST /messages.
 //
-// The order of the checks matters. The token is checked before the body is
-// read, so an unauthenticated client cannot make the server buffer a body.
+// auth.Protect has already admitted and durably refreshed the login session
+// before this handler reads any body or invokes business collaborators.
 // The body limit comes before the JSON is decoded, so an oversized body is
 // refused without being parsed. Only then is the input judged.
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {

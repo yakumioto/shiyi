@@ -146,17 +146,6 @@ func (m ModelConfig) apiKey() (string, error) {
 	return value, nil
 }
 
-// AuthToken returns the bearer token required from clients, read from the
-// environment variable named by AuthTokenEnv. An unset or empty variable means
-// authentication is off.
-func (c Config) AuthToken() string {
-	name := strings.TrimSpace(c.AuthTokenEnv)
-	if name == "" {
-		return ""
-	}
-	return os.Getenv(name)
-}
-
 // ExpandedDataDir returns the data directory with "~" resolved.
 func (c Config) ExpandedDataDir() (string, error) {
 	return ExpandHome(c.DataDir)

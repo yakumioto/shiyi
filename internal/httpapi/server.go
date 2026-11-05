@@ -1,7 +1,7 @@
 // Package httpapi serves Shiyi's HTTP API.
 //
-// The package owns the wire contract of POST /messages: the bearer token
-// check, the request body limit, the total request deadline and the mapping
+// The package owns the wire contract of POST /messages: authenticated access
+// through auth.Module, the request body limit, the request deadline and mapping
 // from an internal failure to one of the frozen error codes. It also serves
 // GET /healthz and mounts the single page web interface at GET /.
 //
@@ -34,15 +34,14 @@ const DefaultRequestTimeout = 60 * time.Second
 
 // Deps are the collaborators a Server needs.
 //
-// The struct is part of the frozen contract with the CLI: the field set does
-// not change. The model clients themselves are built by the caller and are
+// Authentication and model clients are built by the caller. Model clients are
 // already wrapped by the judge and the answerer, so the API key never reaches
 // this package.
 type Deps struct {
 	// Auth is required; anonymous development is an explicit real module mode.
 	Auth auth.Module
 	// Config is the loaded configuration. Only the fields that describe the
-	// wire behaviour are used: AuthTokenEnv, MaxBodyBytes and
+	// wire behaviour are used: MaxBodyBytes and
 	// Budget.RequestTimeout.
 	Config config.Config
 
@@ -62,7 +61,6 @@ type Deps struct {
 
 // Server serves the Shiyi HTTP API.
 type Server struct {
-	cfg      config.Config
 	judge    classify.Judge
 	store    store.Store
 	answerer answer.Answerer
@@ -120,7 +118,6 @@ func New(d Deps) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:            d.Config,
 		auth:           d.Auth,
 		judge:          d.Judge,
 		store:          d.Store,
@@ -145,7 +142,7 @@ func New(d Deps) (*Server, error) {
 
 // Handler returns the HTTP handler of the server.
 //
-// It serves POST /messages and GET /healthz; every other path answers with
+// It serves /auth/, POST /messages and GET /healthz; other paths answer with
 // 404 and the error shape of the API until a web interface is mounted.
 func (s *Server) Handler() http.Handler {
 	return s.handler
@@ -166,9 +163,8 @@ func (s *Server) HandlerWithWeb(web http.Handler) http.Handler {
 
 // handleHealthz reports that the process is alive.
 //
-// It does not check the model: the availability of the service follows the
-// availability of the model, but a liveness probe should not fail just
-// because the provider is slow. It is never authenticated either.
+// It does not check the model or authentication state: process liveness,
+// authentication and model business availability are separate concerns.
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
