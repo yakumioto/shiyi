@@ -57,3 +57,13 @@ max_records = 20
 answer_timeout = "30s"
 # 单次请求的总时限。
 request_timeout = "60s"
+
+# Web 认证接缝预告：本段目前仅冻结配置名称，加载/校验及运行保护由后端票实现。
+# 当前不能把本段当作已经启用的登录保护；旧鉴权行为暂不改变。
+# 迁移完成后正常模式必须配置 bcrypt 密码哈希和明确的 HTTPS 公共来源；
+# 空值拒绝启动，绝不会自动转为匿名。这里不放任何可使用的示例密码/哈希。
+[auth]
+password_hash = ""
+state_dir = "~/.local/state/shiyi/auth"
+public_origin = ""
+dev_anonymous = false
