@@ -6,7 +6,7 @@ Blocked by: none
 
 ## 范围
 
-阅读 ../spec.md 与 ../implementation.md，准备可编译的认证公共契约及接缝清单。写范围：internal/config/config.go、internal/config/auth_contract.go、internal/auth/、internal/api/auth.go、必要的接缝测试、../seams.md；不要改变现有运行行为或加入危险占位授权。
+阅读 ../spec.md 与 ../implementation.md，准备可编译的认证公共契约及接缝清单。写范围：internal/config/config.go、internal/config/auth_contract.go、internal/auth/、internal/api/auth.go、internal/api/api.go 的错误映射追加、必要的真实 JSON 接缝测试、../seams.md；允许 config.example.toml 与 docs/check-readme.sh 的最低接缝兼容改动。不要改变现有运行行为或加入危险占位授权。
 
 选择成熟哈希算法并冻结配置名称、默认值、错误哨兵、构造器签名、会话状态/CSRF 获取和变更端点的线格式及错误码。模块尽量深：认证模块封装密码/持久化/限速/来源/CSRF，HTTP 层只接入公共行为。明确时钟注入便于 HTTP 时间测试；UI 消费稳定 JSON；明确生产 Secure Cookie 与匿名开发例外。
 
