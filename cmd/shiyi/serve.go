@@ -53,6 +53,14 @@ func runServeWith(ctx context.Context, opts Options, stdout, stderr io.Writer, d
 		return exitFailure
 	}
 
+	if closer, ok := handler.(io.Closer); ok {
+		defer func() {
+			if err := closer.Close(); err != nil {
+				logger.Error("关闭认证资源失败")
+			}
+		}()
+	}
+
 	server := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           handler,
@@ -87,6 +95,7 @@ func runServeWith(ctx context.Context, opts Options, stdout, stderr io.Writer, d
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
+		_ = server.Close()
 		fmt.Fprintf(stderr, "shiyi: 关闭服务失败: %v\n", err)
 		return exitFailure
 	}

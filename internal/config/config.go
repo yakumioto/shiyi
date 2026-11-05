@@ -57,6 +57,6 @@ type Config struct {
 	Classifier   ModelConfig  `toml:"classifier"`
 	Answer       ModelConfig  `toml:"answer"`
 	Budget       BudgetConfig `toml:"budget"`
-	// Auth is a contract only until the Web authentication backend is wired.
+	// Auth is validated before the listener starts; missing credentials fail closed.
 	Auth AuthConfig `toml:"auth"`
 }

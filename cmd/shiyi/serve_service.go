@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"shiyi/internal/answer"
+	"shiyi/internal/auth"
 	"shiyi/internal/classify"
 	"shiyi/internal/config"
 	"shiyi/internal/httpapi"
@@ -103,7 +104,12 @@ func buildServer(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 		AnswerTimeout:  cfg.Budget.AnswerTimeout,
 	})
 
+	module, err := auth.New(cfg.Auth, auth.Options{})
+	if err != nil {
+		return nil, err
+	}
 	server, err := httpapi.New(httpapi.Deps{
+		Auth:     module,
 		Config:   cfg,
 		Judge:    judge,
 		Store:    memory,
@@ -111,14 +117,22 @@ func buildServer(cfg config.Config, logger *slog.Logger) (http.Handler, error) {
 		Logger:   logger,
 	})
 	if err != nil {
+		_ = module.Close()
 		return nil, fmt.Errorf("构造 HTTP 服务: %w", err)
 	}
 
 	// The web page is served by the same process, so that the deployment
 	// stays a single binary.
 	if page := webPage(); page != nil {
-		return server.HandlerWithWeb(page), nil
+		return &serviceHandler{Handler: server.HandlerWithWeb(page), server: server}, nil
 	}
 
-	return server.Handler(), nil
+	return &serviceHandler{Handler: server.Handler(), server: server}, nil
 }
+
+type serviceHandler struct {
+	http.Handler
+	server *httpapi.Server
+}
+
+func (s *serviceHandler) Close() error { return s.server.Close() }

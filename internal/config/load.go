@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -92,8 +93,16 @@ type fileBudget struct {
 	RequestTimeout *duration `toml:"request_timeout"`
 }
 
+type fileAuth struct {
+	PasswordHash *string `toml:"password_hash"`
+	StateDir     *string `toml:"state_dir"`
+	PublicOrigin *string `toml:"public_origin"`
+	DevAnonymous *bool   `toml:"dev_anonymous"`
+}
+
 // fileConfig mirrors the whole TOML file.
 type fileConfig struct {
+	Auth         *fileAuth   `toml:"auth"`
 	Listen       *string     `toml:"listen"`
 	DataDir      *string     `toml:"data_dir"`
 	Shard        *string     `toml:"shard"`
@@ -117,6 +126,9 @@ func Load() (Config, error) {
 
 // LoadFile reads the configuration at path. A missing file is not an error.
 func LoadFile(path string) (Config, error) {
+	if _, set := os.LookupEnv(LegacyAuthTokenEnv); set {
+		return Config{}, errAuthMigration
+	}
 	expanded, err := ExpandHome(path)
 	if err != nil {
 		return Config{}, err
@@ -128,7 +140,7 @@ func LoadFile(path string) (Config, error) {
 	case err == nil:
 		if len(data) > 0 {
 			if err := toml.Unmarshal(data, &file); err != nil {
-				return Config{}, fmt.Errorf("parse %s: %w", expanded, err)
+				return Config{}, errors.New("配置文件 TOML 无效，请检查格式（不会回显配置值）")
 			}
 		}
 	case os.IsNotExist(err):
@@ -138,6 +150,9 @@ func LoadFile(path string) (Config, error) {
 		return Config{}, fmt.Errorf("read %s: %w", expanded, err)
 	}
 
+	if file.AuthTokenEnv != nil {
+		return Config{}, errAuthMigration
+	}
 	cfg := build(file)
 
 	if err := applyEnv(&cfg); err != nil {
@@ -153,6 +168,10 @@ func LoadFile(path string) (Config, error) {
 		return Config{}, err
 	}
 	cfg.DataDir = expandedDir
+	cfg.Auth.StateDir, err = ExpandHome(cfg.Auth.StateDir)
+	if err != nil {
+		return Config{}, err
+	}
 
 	return cfg, nil
 }
@@ -172,6 +191,22 @@ func build(file fileConfig) Config {
 			AnswerTimeout:  DefaultAnswerTimeout,
 			RequestTimeout: DefaultRequestTimeout,
 		},
+	}
+
+	cfg.Auth.StateDir = DefaultAuthStateDir
+	if a := file.Auth; a != nil {
+		if a.PasswordHash != nil {
+			cfg.Auth.PasswordHash = *a.PasswordHash
+		}
+		if a.StateDir != nil {
+			cfg.Auth.StateDir = *a.StateDir
+		}
+		if a.PublicOrigin != nil {
+			cfg.Auth.PublicOrigin = *a.PublicOrigin
+		}
+		if a.DevAnonymous != nil {
+			cfg.Auth.DevAnonymous = *a.DevAnonymous
+		}
 	}
 
 	if file.Listen != nil {
@@ -274,6 +309,22 @@ func inheritModel(file *fileModel, answer ModelConfig) ModelConfig {
 
 // applyEnv lets the environment win over the file.
 func applyEnv(cfg *Config) error {
+	for name, target := range map[string]*string{EnvAuthPasswordHash: &cfg.Auth.PasswordHash, EnvAuthStateDir: &cfg.Auth.StateDir, EnvAuthPublicOrigin: &cfg.Auth.PublicOrigin} {
+		if v, set := os.LookupEnv(name); set {
+			*target = v
+		}
+	}
+	if value, set := os.LookupEnv(EnvDevAnonymous); set {
+		switch value {
+		case "true":
+			cfg.Auth.DevAnonymous = true
+		case "false":
+			cfg.Auth.DevAnonymous = false
+		default:
+			return errors.New("SHIYI_DEV_ANONYMOUS 只接受 true 或 false")
+		}
+	}
+
 	if v := os.Getenv(EnvListen); strings.TrimSpace(v) != "" {
 		cfg.Listen = v
 	}

@@ -26,7 +26,7 @@ func (e *ValidationError) Error() string {
 //
 // The API key itself is never included in an error message.
 func (c Config) Validate() error {
-	var problems []string
+	problems := c.validateAuth()
 
 	if strings.TrimSpace(c.Listen) == "" {
 		problems = append(problems, "listen 不能为空（设置 listen 或 SHIYI_LISTEN）")
@@ -144,17 +144,6 @@ func (m ModelConfig) apiKey() (string, error) {
 		return "", fmt.Errorf("环境变量 %s 为空，请把 API key 导出到那里", name)
 	}
 	return value, nil
-}
-
-// AuthToken returns the bearer token required from clients, read from the
-// environment variable named by AuthTokenEnv. An unset or empty variable means
-// authentication is off.
-func (c Config) AuthToken() string {
-	name := strings.TrimSpace(c.AuthTokenEnv)
-	if name == "" {
-		return ""
-	}
-	return os.Getenv(name)
 }
 
 // ExpandedDataDir returns the data directory with "~" resolved.

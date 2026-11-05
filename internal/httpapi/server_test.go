@@ -15,6 +15,7 @@ import (
 
 	"shiyi/internal/answer"
 	"shiyi/internal/api"
+	"shiyi/internal/auth"
 	"shiyi/internal/classify"
 	"shiyi/internal/config"
 	"shiyi/internal/httpapi"
@@ -124,6 +125,7 @@ func newHarness(t *testing.T, configure func(*config.Config)) *harness {
 
 	srv, err := httpapi.New(httpapi.Deps{
 		Config:   cfg,
+		Auth:     developmentAuth(t),
 		Judge:    h.judge,
 		Store:    h.store,
 		Answerer: h.answerer,
@@ -133,6 +135,7 @@ func newHarness(t *testing.T, configure func(*config.Config)) *harness {
 		t.Fatalf("httpapi.New: %v", err)
 	}
 
+	t.Cleanup(func() { _ = srv.Close() })
 	h.server = httptest.NewServer(srv.Handler())
 	t.Cleanup(h.server.Close)
 	return h
@@ -150,6 +153,9 @@ func (h *harness) request(t *testing.T, method, path, body string, headers map[s
 	req, err := http.NewRequest(method, h.server.URL+path, reader)
 	if err != nil {
 		t.Fatalf("build request: %v", err)
+	}
+	if method == http.MethodPost {
+		authorizeDevelopment(t, h.server, req)
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
@@ -411,79 +417,18 @@ func TestBodyOverTheLimitIsRefused(t *testing.T) {
 	}
 }
 
-// TestAuthIsRequiredWhenATokenIsConfigured cannot run in parallel: it sets
-// an environment variable, which t.Setenv forbids in a parallel test.
-func TestAuthIsRequiredWhenATokenIsConfigured(t *testing.T) {
-	const envName = "SHIYI_HTTPAPI_TEST_TOKEN"
-	t.Setenv(envName, "s3cret")
-
-	h := newHarness(t, func(cfg *config.Config) {
-		cfg.AuthTokenEnv = envName
-	})
-
-	tests := []struct {
-		name    string
-		headers map[string]string
-		want    int
-	}{
-		{name: "no header", headers: nil, want: http.StatusUnauthorized},
-		{name: "empty header", headers: map[string]string{"Authorization": ""}, want: http.StatusUnauthorized},
-		{name: "wrong scheme", headers: map[string]string{"Authorization": "Basic s3cret"}, want: http.StatusUnauthorized},
-		{name: "wrong token", headers: map[string]string{"Authorization": "Bearer wrong"}, want: http.StatusUnauthorized},
-		{name: "token without prefix", headers: map[string]string{"Authorization": "s3cret"}, want: http.StatusUnauthorized},
-		{name: "right token", headers: map[string]string{"Authorization": "Bearer s3cret"}, want: http.StatusCreated},
+// Bearer credentials never authorize the password-mode HTTP boundary.
+func TestBearerNeverAuthorizes(t *testing.T) {
+	h := newAuthHarness(t)
+	b := h.browser()
+	for _, value := range []string{"", "Basic secret", "Bearer secret"} {
+		res, raw := b.request("POST", "/messages", `{"content":"private"}`, func(r *http.Request) { r.Header.Set("Authorization", value) })
+		requireStatus(t, res, raw, 401)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resp, raw := h.post(t, `{"content":"一条记录"}`, tt.headers)
-
-			if resp.StatusCode != tt.want {
-				t.Fatalf("status = %d, want %d (body %q)", resp.StatusCode, tt.want, raw)
-			}
-			if tt.want == http.StatusUnauthorized {
-				if got := decodeError(t, raw).Error.Code; got != api.CodeUnauthorized {
-					t.Errorf("code = %q, want %q", got, api.CodeUnauthorized)
-				}
-				if h.judge.calls != 0 {
-					t.Errorf("judge calls = %d, want 0: an unauthenticated request is never judged", h.judge.calls)
-				}
-			}
-		})
-	}
-}
-
-// TestHealthzIsNotAuthenticated cannot run in parallel: it sets an
-// environment variable.
-func TestHealthzIsNotAuthenticated(t *testing.T) {
-	const envName = "SHIYI_HTTPAPI_TEST_HEALTHZ_TOKEN"
-	t.Setenv(envName, "s3cret")
-
-	h := newHarness(t, func(cfg *config.Config) {
-		cfg.AuthTokenEnv = envName
-	})
-
-	resp, raw := h.get(t, "/healthz", nil)
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want %d (body %q)", resp.StatusCode, http.StatusOK, raw)
-	}
-}
-
-// TestNoTokenMeansNoAuth checks that an empty token variable turns the
-// authentication off.
-func TestNoTokenMeansNoAuth(t *testing.T) {
-	const envName = "SHIYI_HTTPAPI_TEST_EMPTY_TOKEN"
-	t.Setenv(envName, "")
-
-	h := newHarness(t, func(cfg *config.Config) {
-		cfg.AuthTokenEnv = envName
-	})
-
-	resp, raw := h.post(t, `{"content":"一条记录"}`, nil)
-
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("status = %d, want %d (body %q)", resp.StatusCode, http.StatusCreated, raw)
+	res, raw := b.request("GET", "/healthz", "", nil)
+	requireStatus(t, res, raw, 200)
+	if h.judge.calls != 0 || h.memory.appendCalls != 0 {
+		t.Fatal("rejected credentials reached business")
 	}
 }
 
@@ -718,6 +663,7 @@ func TestNewRefusesAnUnusableConfiguration(t *testing.T) {
 
 			_, err := httpapi.New(httpapi.Deps{
 				Config:   cfg,
+				Auth:     developmentAuth(t),
 				Judge:    &fakeJudge{kind: classify.KindRecord},
 				Store:    &fakeStore{},
 				Answerer: &fakeAnswerer{},
@@ -746,6 +692,7 @@ func TestNewNeedsItsCollaborators(t *testing.T) {
 		name string
 		deps httpapi.Deps
 	}{
+		{name: "no auth", deps: httpapi.Deps{Config: cfg, Judge: &fakeJudge{}, Store: &fakeStore{}, Answerer: &fakeAnswerer{}}},
 		{
 			name: "no judge",
 			deps: httpapi.Deps{Config: cfg, Store: &fakeStore{}, Answerer: &fakeAnswerer{}},
@@ -764,9 +711,51 @@ func TestNewNeedsItsCollaborators(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			if tt.name != "no auth" {
+				tt.deps.Auth = developmentAuth(t)
+			}
 			if _, err := httpapi.New(tt.deps); err == nil {
 				t.Fatalf("New returned no error, want one")
 			}
 		})
 	}
+}
+
+// Existing business regression tests use the real explicit development module;
+// the browser still obtains a bound challenge over HTTP before every POST.
+func developmentAuth(t *testing.T) auth.Module {
+	t.Helper()
+	m, err := auth.New(config.AuthConfig{DevAnonymous: true, PublicOrigin: "http://memory.test"}, auth.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	return m
+}
+func authorizeDevelopment(t *testing.T, s *httptest.Server, r *http.Request) {
+	t.Helper()
+	res, err := s.Client().Get(s.URL + api.PathAuthSession)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var session api.SessionResponse
+	if err := json.NewDecoder(res.Body).Decode(&session); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range res.Cookies() {
+		r.AddCookie(c)
+	}
+	r.Header.Set("Origin", "http://memory.test")
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set(api.HeaderCSRFToken, session.CSRFToken)
+}
+func developmentPost(t *testing.T, s *httptest.Server, body io.Reader) (*http.Response, error) {
+	t.Helper()
+	r, err := http.NewRequest("POST", s.URL+"/messages", body)
+	if err != nil {
+		return nil, err
+	}
+	authorizeDevelopment(t, s, r)
+	return s.Client().Do(r)
 }
