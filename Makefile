@@ -9,9 +9,8 @@ DOCKER_CONFIG ?= $(or $(TMPDIR),/tmp)/shiyi-docker-config
 
 .PHONY: check prereqs verify-vendor vet compile build test test-frozen fmt run smoke readme-check image image-check clean
 
-# check is the one local gate. Its steps are the steps of the test job in
-# .github/workflows/ci.yml, in the same order, plus the two repository checks
-# that job does not run (the end-to-end smoke and the docs consistency check).
+# check is the one local gate. CI invokes the same target, including the real
+# authenticated process smoke and documentation consistency checks.
 #
 # A green `make check` is what "the gate is green" means in this repository.
 # Run it before claiming a change is done.
@@ -22,10 +21,11 @@ check: prereqs verify-vendor vet compile test test-frozen smoke readme-check
 # prereqs fails early with a readable message when a tool the tests shell out
 # to is missing, instead of letting it surface as a confusing test failure.
 prereqs:
-	@command -v rg >/dev/null 2>&1 || { \
-		echo "make: ripgrep (rg) is required — the search and its tests shell out to it" >&2; \
-		exit 1; \
-	}
+	@for tool in rg python3 openssl; do \
+		command -v $$tool >/dev/null 2>&1 || { \
+			echo "make: $$tool is required for search / authenticated TLS smoke" >&2; exit 1; \
+		}; \
+	done
 
 # verify-vendor catches a go.mod/go.sum change that was not followed by
 # `go mod vendor`, which would make the container build fail.
@@ -71,8 +71,8 @@ readme-check:
 fmt:
 	$(GO) fmt ./...
 
-# image builds the container image; image-check is the container job of CI run
-# locally: the image builds, ripgrep is in it, and /healthz answers in it.
+# image-check runs the same authenticated TLS/TTY container smoke as CI.
+# Its throwaway containers and named volumes never touch a real deployment.
 image:
 	@mkdir -p $(DOCKER_CONFIG)
 	DOCKER_CONFIG=$(DOCKER_CONFIG) docker build -t $(IMAGE) .
@@ -82,18 +82,7 @@ image-check:
 	@echo "== container image =="
 	DOCKER_CONFIG=$(DOCKER_CONFIG) docker build -t $(IMAGE) .
 	DOCKER_CONFIG=$(DOCKER_CONFIG) docker run --rm --entrypoint rg $(IMAGE) --version
-	@set -e; \
-	DOCKER_CONFIG=$(DOCKER_CONFIG) docker run -d --name shiyi-image-check -p 8788:8787 \
-		-e SHIYI_API_KEY=dummy $(IMAGE) >/dev/null; \
-	trap 'DOCKER_CONFIG=$(DOCKER_CONFIG) docker rm -f shiyi-image-check >/dev/null 2>&1' EXIT; \
-	for i in $$(seq 1 30); do \
-		if curl -fsS http://127.0.0.1:8788/healthz >/dev/null 2>&1; then \
-			echo "container /healthz ok"; exit 0; \
-		fi; \
-		sleep 1; \
-	done; \
-	echo "container /healthz never answered" >&2; \
-	DOCKER_CONFIG=$(DOCKER_CONFIG) docker logs shiyi-image-check >&2; exit 1
+	DOCKER_CONFIG=$(DOCKER_CONFIG) bash scripts/smoke.sh --image $(IMAGE)
 
 run: build
 	./$(BINARY) serve
