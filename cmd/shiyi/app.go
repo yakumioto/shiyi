@@ -54,6 +54,8 @@ func run(ctx context.Context, args []string, factory senderFactory, stdin io.Rea
 		return exitOK
 	case ModeServe:
 		return runServe(ctx, opts, stdout, stderr)
+	case ModeHashPassword:
+		return runHashPassword(ctx, stdin, stdout, stderr)
 	case ModeSend:
 		snd, err := factory(opts)
 		if err != nil {
