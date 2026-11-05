@@ -1,7 +1,7 @@
 # 04: 移除记忆 CLI 并迁移服务部署与文档
 
 Status: ready-for-agent
-Execution: pending
+Execution: claimed
 Blocked by: 02
 
 ## 范围

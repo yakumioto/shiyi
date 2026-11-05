@@ -1,7 +1,7 @@
 # 03: Web 登录与私人界面生命周期
 
 Status: ready-for-agent
-Execution: pending
+Execution: claimed
 Blocked by: 02
 
 ## 范围
