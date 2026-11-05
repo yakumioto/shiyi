@@ -23,6 +23,8 @@ const (
 	ModeHelp
 	// ModeVersion prints the version and exits.
 	ModeVersion
+	// ModeHashPassword generates a password hash using a terminal.
+	ModeHashPassword
 )
 
 // Options is the parsed command line.
@@ -59,6 +61,12 @@ const usageText = `shiyi — Chat-first 的个人记忆系统
 // Flags may appear anywhere. Everything that is not a flag is either the
 // "serve" sub-command or the text of a single message.
 func parseArgs(args []string) (Options, error) {
+	if len(args) > 0 && args[0] == "hash-password" {
+		if len(args) != 1 {
+			return Options{}, fmt.Errorf("hash-password 不接受参数；请在终端交互输入密码")
+		}
+		return Options{Mode: ModeHashPassword}, nil
+	}
 	opts := Options{Mode: ModeREPL, Server: defaultServer}
 
 	var positional []string
