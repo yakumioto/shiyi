@@ -26,7 +26,7 @@ func (e *ValidationError) Error() string {
 //
 // The API key itself is never included in an error message.
 func (c Config) Validate() error {
-	var problems []string
+	problems := c.validateAuth()
 
 	if strings.TrimSpace(c.Listen) == "" {
 		problems = append(problems, "listen 不能为空（设置 listen 或 SHIYI_LISTEN）")
