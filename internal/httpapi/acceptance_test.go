@@ -79,6 +79,7 @@ func newAxHarness(t *testing.T, judgeTurns, answerTurns []*llm.Response) *axHarn
 
 	server, err := httpapi.New(httpapi.Deps{
 		Config:   cfg,
+		Auth:     developmentAuth(t),
 		Judge:    classify.New(judgeClient, "m", 0),
 		Store:    memory,
 		Answerer: answer.New(answerClient, search.New(dir), "m", 0, answer.Budget{}),
@@ -88,6 +89,7 @@ func newAxHarness(t *testing.T, judgeTurns, answerTurns []*llm.Response) *axHarn
 		t.Fatalf("httpapi.New: %v", err)
 	}
 
+	t.Cleanup(func() { _ = server.Close() })
 	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)
 
@@ -102,7 +104,7 @@ func (h *axHarness) post(content string) (int, []byte) {
 	if err != nil {
 		h.t.Fatalf("encode request: %v", err)
 	}
-	resp, err := http.Post(h.server.URL+"/messages", "application/json", bytes.NewReader(body))
+	resp, err := developmentPost(h.t, h.server, bytes.NewReader(body))
 	if err != nil {
 		h.t.Fatalf("POST /messages: %v", err)
 	}
@@ -305,6 +307,7 @@ func TestAcceptanceModelUnavailableWritesNothing(t *testing.T) {
 
 	server, err := httpapi.New(httpapi.Deps{
 		Config:   cfg,
+		Auth:     developmentAuth(t),
 		Judge:    classify.New(judge, "m", 0),
 		Store:    memory,
 		Answerer: answer.New(llm.NewFakeClient(), search.New(dir), "m", 0, answer.Budget{}),
@@ -313,6 +316,7 @@ func TestAcceptanceModelUnavailableWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("httpapi.New: %v", err)
 	}
+	t.Cleanup(func() { _ = server.Close() })
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
 
@@ -490,6 +494,7 @@ func serve(t *testing.T, dir string, memory store.Store, judgeTurns, answerTurns
 
 	server, err := httpapi.New(httpapi.Deps{
 		Config:   cfg,
+		Auth:     developmentAuth(t),
 		Judge:    classify.New(llm.NewFakeClient(judgeTurns...), "m", 0),
 		Store:    memory,
 		Answerer: answer.New(llm.NewFakeClient(answerTurns...), search.New(dir), "m", 0, answer.Budget{}),
@@ -499,6 +504,7 @@ func serve(t *testing.T, dir string, memory store.Store, judgeTurns, answerTurns
 		t.Fatalf("httpapi.New: %v", err)
 	}
 
+	t.Cleanup(func() { _ = server.Close() })
 	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)
 	return httpServer

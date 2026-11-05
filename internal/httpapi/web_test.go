@@ -40,6 +40,7 @@ func newServer(t *testing.T, configure func(*config.Config)) (*httpapi.Server, *
 
 	srv, err := httpapi.New(httpapi.Deps{
 		Config:   cfg,
+		Auth:     developmentAuth(t),
 		Judge:    judge,
 		Store:    store,
 		Answerer: answerer,
@@ -48,6 +49,7 @@ func newServer(t *testing.T, configure func(*config.Config)) (*httpapi.Server, *
 	if err != nil {
 		t.Fatalf("httpapi.New: %v", err)
 	}
+	t.Cleanup(func() { _ = srv.Close() })
 	return srv, judge, store, answerer
 }
 

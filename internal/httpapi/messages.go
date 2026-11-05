@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 
 	"shiyi/internal/api"
@@ -20,11 +19,6 @@ import (
 // The body limit comes before the JSON is decoded, so an oversized body is
 // refused without being parsed. Only then is the input judged.
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
-	if !s.authorized(r) {
-		s.writeError(w, api.CodeUnauthorized, "需要有效的 Bearer 令牌")
-		return
-	}
-
 	content, ok := s.readContent(w, r)
 	if !ok {
 		return
@@ -131,30 +125,6 @@ func (s *Server) handleQuery(ctx context.Context, w http.ResponseWriter, content
 		Citations: citations,
 		Status:    string(res.Status),
 	})
-}
-
-// authorized checks the bearer token.
-//
-// The configuration names the environment variable that holds the token; the
-// token itself is read from the environment at request time. An unset or
-// empty variable means the server does not authenticate at all.
-func (s *Server) authorized(r *http.Request) bool {
-	name := s.cfg.AuthTokenEnv
-	if name == "" {
-		return true
-	}
-	expected := os.Getenv(name)
-	if expected == "" {
-		return true
-	}
-
-	header := r.Header.Get("Authorization")
-	const prefix = "Bearer "
-	if !strings.HasPrefix(header, prefix) {
-		return false
-	}
-	presented := strings.TrimSpace(strings.TrimPrefix(header, prefix))
-	return subtleEqual(presented, expected)
 }
 
 // isTooLarge reports whether err is the body limit being hit.
