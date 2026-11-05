@@ -9,11 +9,8 @@
 # 构建：
 #   docker build -t shiyi:latest .
 #
-# 运行（数据挂到 /data，密钥只经环境变量传入）：
-#   docker run -d --name shiyi -p 8787:8787 \
-#     -v shiyi-data:/data \
-#     -e SHIYI_API_KEY=sk-... \
-#     shiyi:latest
+# 安全部署步骤见 docs/deployment.md：必须配置密码哈希与唯一 HTTPS 来源，
+# /data 只放记忆，/auth 独立持久化认证状态；主机端口只对可信反向代理开放。
 
 # ---------------------------------------------------------------- builder
 
@@ -46,20 +43,22 @@ FROM alpine:3.22 AS runtime
 RUN apk add --no-cache ripgrep ca-certificates \
     && addgroup -g 1000 -S shiyi \
     && adduser -u 1000 -S -G shiyi -h /home/shiyi shiyi \
-    && mkdir -p /data /etc/shiyi \
-    && chown -R shiyi:shiyi /data /etc/shiyi
+    && mkdir -p /data /auth /etc/shiyi \
+    && chown -R shiyi:shiyi /data /auth /etc/shiyi \
+    && chmod 0700 /data /auth
 
 COPY --from=builder /out/shiyi /usr/local/bin/shiyi
 
-# 镜像内置一份开箱即用的配置：数据目录指向数据卷，监听全部网卡，
-# 密钥通过 SHIYI_API_KEY 环境变量提供（配置里只写变量名，不写密钥）。
+# 镜像默认拒绝漏配：部署者提供 SHIYI_AUTH_PASSWORD_HASH 与
+# SHIYI_AUTH_PUBLIC_ORIGIN；模型密钥通过 SHIYI_API_KEY 提供。
 COPY docs/config.docker.toml /etc/shiyi/config.toml
 
 ENV SHIYI_DATA_DIR=/data \
+    SHIYI_AUTH_STATE_DIR=/auth \
     SHIYI_LISTEN=0.0.0.0:8787 \
     SHIYI_CONFIG=/etc/shiyi/config.toml
 
-VOLUME /data
+VOLUME /data /auth
 EXPOSE 8787
 
 USER shiyi

@@ -17,11 +17,6 @@ data_dir = "~/.local/share/shiyi"
 # 边界一律按 UTC 计算。
 shard = "monthly"
 
-# 鉴权 token 所在的环境变量名。设置该环境变量后，POST /messages 需要带
-# Authorization: Bearer <token>；该环境变量为空或未设置时则不鉴权。
-# /healthz 永远不鉴权。
-auth_token_env = "SHIYI_AUTH_TOKEN"
-
 # 请求体上限（字节）。超过返回 413 request_too_large。默认 1 MiB。
 max_body_bytes = 1048576
 
@@ -58,10 +53,11 @@ answer_timeout = "30s"
 # 单次请求的总时限。
 request_timeout = "60s"
 
-# Web 认证接缝预告：本段目前仅冻结配置名称，加载/校验及运行保护由后端票实现。
-# 当前不能把本段当作已经启用的登录保护；旧鉴权行为暂不改变。
-# 迁移完成后正常模式必须配置 bcrypt 密码哈希和明确的 HTTPS 公共来源；
-# 空值拒绝启动，绝不会自动转为匿名。这里不放任何可使用的示例密码/哈希。
+# 正常模式必须配置 bcrypt 密码哈希和唯一 HTTPS 公共来源。
+# 用 shiyi hash-password 在 TTY 中不回显输入并双确认，推荐成本 12。
+# 可用 SHIYI_AUTH_PASSWORD_HASH / SHIYI_AUTH_PUBLIC_ORIGIN 覆盖；
+# 空值拒绝启动，绝不会自动转为匿名。这里不放可使用的示例密码/哈希。
+# 认证目录必须独立于记忆目录；目录 0700、状态文件 0600，单进程写者。
 [auth]
 password_hash = ""
 state_dir = "~/.local/state/shiyi/auth"
