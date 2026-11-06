@@ -1,7 +1,7 @@
 # 04: 移除记忆 CLI 并迁移服务部署与文档
 
 Status: ready-for-agent
-Execution: claimed
+Execution: completed
 Blocked by: 02
 
 ## 范围
@@ -12,12 +12,18 @@ Blocked by: 02
 
 ## 验收
 
-- [ ] 旧客户端与专属测试移除，serve 生命周期保留、旧命令失败验证。
-- [ ] 可复制哈希生成与密码恢复指引；日志无秘密。
-- [ ] 文档检查保留原文/引用/冻结集/不保存查询回答，去除旧 CLI 强制断言。
-- [ ] `make check` 和 `make image-check` 实际执行并报告；容器默认不靠匿名模式过关。
-- [ ] 合并最新集成 tip，无冻结接缝漂移。
+- [x] 旧客户端与专属测试移除，serve 生命周期保留、旧命令失败验证。
+- [x] 可复制哈希生成与密码恢复指引；日志无秘密。
+- [x] 文档检查保留原文/引用/冻结集/不保存查询回答，去除旧 CLI 强制断言。
+- [x] `make check` 和 `make image-check` 实际执行并报告；容器默认不靠匿名模式过关。
+- [x] 合并最新集成 tip，无冻结接缝漂移。
 
 ## Comments
 
-实施中。原实施者在获准依赖扩围后长期没有代码改动，已停止；原工作树 `.worktrees/web-auth-04` / 分支 `tkt/web-auth-04` 明确放弃，保留到最终清理。替代实施者在全新 `.worktrees/web-auth-04-retry` / `tkt/web-auth-04-retry` 从集成 `12f2038` 继续，范围、接缝与验收不变。
+已完成。实现提交 `4af1a56`、`a28674f`、`4c01228`、`f0e2016`、`959f550`；票 tip `959f550` 包含当时最新集成 `b371d1a`，集成提交 `e7cf539`，分支 `feat/web-auth`。
+
+Lead 在固定票工作树实际执行 `flock /tmp/shiyi-web-auth-make-check.lock make check` 与 `make image-check IMAGE=shiyi:web-auth-04-retry`，均 exit 0；合入后再次运行主树 `make check`，ALL GREEN。包含真实 TTY 无回显/双确认/信号恢复、旧 CLI 拒绝、HTTPS Cookie 登录、原文/引用/不落查询、非 root 容器与独立认证卷 0700/文件 0600、存活检查、正常重启/撤销持久化/全部退出/同密码重哈希失效/秘密日志，文档检查 240 项通过。
+
+普通 workspace-write 沙箱因 /dev/ptmx 返回 EACCES，曾使完整门禁失败；经用户获准的同一命令单次更宽权限重试才完成真实验收，没有跳过测试、改变设备权限或以匿名模式救绿。Docker 的 SecretsUsedInArgOrEnv 提示命中 SHIYI_AUTH_STATE_DIR，但该值只有 /auth 路径，镜像未烘焙哈希。无冻结接缝/记忆 fixtures 改动，无真实部署操作。
+
+历史：原实施者长期无代码改动，已停止；原 `.worktrees/web-auth-04` / `tkt/web-auth-04` 明确放弃，保留到最终清理。替代工作树为 `.worktrees/web-auth-04-retry`，所有实际交付来自该树。
