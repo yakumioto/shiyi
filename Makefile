@@ -7,25 +7,33 @@ IMAGE ?= shiyi:latest
 # a build never writes into the working tree. Override to reuse a real config.
 DOCKER_CONFIG ?= $(or $(TMPDIR),/tmp)/shiyi-docker-config
 
-.PHONY: check prereqs verify-vendor vet compile build test test-frozen fmt run smoke readme-check image image-check clean
+.PHONY: check prereqs browser-prereqs browser-check verify-vendor vet compile build test test-frozen fmt run smoke readme-check image image-check clean
 
 # check is the one local gate. CI invokes the same target, including the real
-# authenticated process smoke and documentation consistency checks.
+# HTTPS browser acceptance, authenticated process smoke and docs consistency.
 #
 # A green `make check` is what "the gate is green" means in this repository.
 # Run it before claiming a change is done.
-check: prereqs verify-vendor vet compile test test-frozen smoke readme-check
+check: prereqs verify-vendor vet compile test test-frozen browser-check smoke readme-check
 	@echo
 	@echo "make check: ALL GREEN"
 
 # prereqs fails early with a readable message when a tool the tests shell out
 # to is missing, instead of letting it surface as a confusing test failure.
-prereqs:
+prereqs: browser-prereqs
 	@for tool in rg python3 openssl; do \
 		command -v $$tool >/dev/null 2>&1 || { \
 			echo "make: $$tool is required for search / authenticated TLS smoke" >&2; exit 1; \
 		}; \
 	done
+
+# These are test prerequisites, not runtime/production configuration.
+browser-prereqs:
+	@bash scripts/browser-prereqs.sh
+
+browser-check: browser-prereqs
+	@echo "== real HTTPS browser acceptance =="
+	node --test tests/browser/web-auth.test.mjs
 
 # verify-vendor catches a go.mod/go.sum change that was not followed by
 # `go mod vendor`, which would make the container build fail.

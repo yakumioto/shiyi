@@ -159,6 +159,30 @@ curl -fsS http://127.0.0.1:8787/healthz
 应用日志不包含密码、哈希、Cookie/会话标识、CSRF token、模型密钥或记忆原文。排障时不要开启代理正文/敏感头日志；
 发布日志前仍应核对用户自己配置的路径、主机名及其他基础设施日志的敏感信息。
 
+## 隔离验证与真实部署验收
+
+仓库唯一的本地门禁是 `make check`，包含 `make browser-check`；CI 安装 Node 24 与 Chrome 后运行同一门禁，另跑 `make image-check`。
+需要 Go 1.26、ripgrep、Python 3、OpenSSL、Node 24、Chrome/Chromium 和可分配 PTY 的环境；镜像验证还需 Docker。
+浏览器默认 `/bin/google-chrome`，可以用 `CHROME_BIN` 指定；缺工具会失败，不能跳过或视为通过。
+
+```bash
+CHROME_BIN=/bin/google-chrome flock /tmp/shiyi-web-auth-make-check.lock make check
+CHROME_BIN=/bin/google-chrome make browser-check
+flock /tmp/shiyi-web-auth-image-check.lock make image-check IMAGE=shiyi:test
+```
+
+若隔离测试环境禁止 Chrome sandbox，显式给前两条命令增加 `CHROME_NO_SANDBOX=1`。
+这只影响本地临时测试 Chrome，绝不是生产配置；PTY 被拒绝时真实终端冒烟会失败，不能改设备权限或跳过来获得通过。
+浏览器夹具使用正常密码模式、临时 HTTPS、隔离 profile、仅限夹具公钥的 SPKI 证书例外；不全局忽略证书错误。
+测试实际关闭/重开 Chrome 并复用同一临时 profile；服务/auth 重构复用同一临时认证目录/哈希。
+它验证有效 Cookie 持续可用、原文/回答/引用/草稿不会随新页面恢复，不预塞 Cookie、不读取认证或 Chrome 私有序列化。
+其余过期、退出、跨标签页、BFCache、竞态、XSS 用例见[浏览器验收说明](<../tests/browser/README.md>)。
+
+这些自动化测试不使用实际模型或部署凭据，也不能证明你的公网域名、TLS、代理或网络策略已安全配置。
+部署者仍需在实际 HTTPS 来源通过 Web 登录、记录/查询、关闭重开浏览器、正常重启服务、退出并确认旧页面失效；
+检查公开健康接口与模型业务可用性的区别，并确认内部端口不对公网开放。
+不要把本地结果或仅提交的 CI 配置当成远端 CI 已运行的证据。
+
 ## 从旧版本迁移
 
 1. 停止旧服务；备份记忆并保护备份密钥。

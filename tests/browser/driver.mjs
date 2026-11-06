@@ -168,20 +168,34 @@ export async function setup(t, { developmentAnonymous = false } = {}) {
   const args = ['--headless=new', '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0',
     `--user-data-dir=${join(directory, 'chrome')}`, `--ignore-certificate-errors-spki-list=${spki}`,
     '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-component-update',
-    '--disable-sync', '--disable-default-apps', '--disable-dev-shm-usage', 'about:blank'];
+    // Persistent test profiles must not contact the user's desktop keyring.
+    '--password-store=basic', '--disable-sync', '--disable-default-apps', '--disable-dev-shm-usage', 'about:blank'];
   // Explicit opt-in for sandbox-restricted CI; never attach to a user's browser.
   if (process.env.CHROME_NO_SANDBOX === '1') args.unshift('--no-sandbox');
-  chrome = child(process.env.CHROME_BIN || '/bin/google-chrome', args, {
-    env: { ...process.env, HOME: directory, XDG_CONFIG_HOME: join(directory, 'config'), XDG_CACHE_HOME: join(directory, 'cache') }
-  });
-  const debuggerURL = new Promise(resolve => {
-    chrome.stderr.on('data', () => {
-      const match = chrome.errors.match(/DevTools listening on (ws:\/\/[^\s]+)/);
-      if (match) resolve(match[1]);
+  async function startChrome() {
+    chrome = child(process.env.CHROME_BIN || '/bin/google-chrome', args, {
+      env: { ...process.env, HOME: directory, XDG_CONFIG_HOME: join(directory, 'config'), XDG_CACHE_HOME: join(directory, 'cache') }
     });
-  });
-  const url = await deadline(Promise.race([debuggerURL, chrome.finished.then(() => { throw new Error(`Chrome failed: ${chrome.errors}`); })]), 'Chrome ready');
-  cdp = await CDP.connect(url);
+    const debuggerURL = new Promise(resolve => {
+      chrome.stderr.on('data', () => {
+        const match = chrome.errors.match(/DevTools listening on (ws:\/\/[^\s]+)/);
+        if (match) resolve(match[1]);
+      });
+    });
+    const url = await deadline(Promise.race([debuggerURL, chrome.finished.then(() => { throw new Error(`Chrome failed: ${chrome.errors}`); })]), 'Chrome ready');
+    cdp = await CDP.connect(url);
+  }
+  async function restartBrowser() {
+    const previousPID = chrome.pid;
+    await cdp.send('Browser.close');
+    // A forced kill is not a successful normal close/reopen acceptance.
+    const [exitCode] = await deadline(chrome.finished, 'Chrome normal shutdown');
+    cdp.socket.close();
+    cdp = undefined;
+    await startChrome(); // Same mkdtemp profile; no Cookie export/import.
+    return { previousPID, pid: chrome.pid, exitCode };
+  }
+  await startChrome();
   async function context() { return (await cdp.send('Target.createBrowserContext')).browserContextId; }
   async function page(browserContextId) {
     const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank', browserContextId });
@@ -193,5 +207,5 @@ export async function setup(t, { developmentAnonymous = false } = {}) {
     await p.navigate(origin);
     return p;
   }
-  return { origin, control, cdp, context, page };
+  return { origin, control, get cdp() { return cdp; }, context, page, restartBrowser };
 }
