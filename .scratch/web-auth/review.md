@@ -39,4 +39,37 @@ if !m.sourceOK(r, true) || !m.csrfOK(r, s, logged)
 
 Standards：1 条，最高 P3；Spec：1 条，最高 P2。
 
-由一位全新上下文实施者在独立工作树统一修复 S1/P1；见 [06](<issues/06-review-fixes.md>)。当前尚未修复，不能将此审查记录视为通过结论。
+由一位全新上下文实施者在独立工作树统一修复 S1/P1；见 [06](<issues/06-review-fixes.md>)。原始发现与严重性保留，实际整改及 Lead 补验结果见下文。
+
+## 06 实际整改记录（2026-11-06，Asia/Shanghai）
+
+本节追加整改证据，不改写上面独立 Standards / Spec 审查的原始结论、严重性或静态发现来源。“当前尚未修复”是上一节记录时的历史状态。06 由同一全新上下文实施者独自在指定工作树完成；未重新声称执行两位独立审查。
+
+### Standards / S1（P3）整改
+
+- 实现提交：`019b2066fe49085c3b3859d5b49dfc9076c513b5`。
+- [auth.go](<../../internal/auth/auth.go>) 只提取私有 `revalidatePasswordRequestLocked`，调用者必须持有 `m.mu`；不增加公共接口或测试私有实现。
+- 保留密码 body IO 后和 bcrypt 比较后重新加锁的两次调用。每次仍依次检查 closed / failed / stateSafe、重新解析登录会话及期限、logout-all 的有效登录要求、来源与 CSRF；分别保持 503 / 401 / 403 响应。body 错误处理、尝试额度和密码错误处理的相对位置不变。
+- 这是可维护性整改，不把原 P3 smell 重新描述成已确认的鉴权漏洞；最终 HTTP/race、慢 body 撤销、期限及限速回归执行结果见下方门禁记录。
+
+### Spec / P1（P2）整改
+
+- 在修改应用前，扩展[真实开发匿名浏览器用例](<../../tests/browser/web-auth.test.mjs>)并连续两次实际复现：19:59 时模型失败后草稿保留；推进至 20:00、主动点击发送后，草稿实际为 `''`。两次均 exit 1，失败为 `challenge rotation must not discard an unsubmitted draft`，不是超时或环境失败。
+- 红灯命令：`CHROME_NO_SANDBOX=1 CHROME_BIN=/bin/google-chrome node --test --test-name-pattern='development anonymous mode' tests/browser/web-auth.test.mjs`；两次耗时约 1.915s / 1.336s。只修改测试时复现，没有先改应用或人为破坏后端。
+- [app.js](<../../internal/web/static/app.js>) 区分密码登录会话 token 变化与开发匿名 challenge 正常轮换；模式变化或密码身份变化仍递增视图 generation 并清屏/清草稿，开发匿名轮换只接纳新 CSRF token。没有延长 challenge 期限、改 Cookie 或绕过真实来源/CSRF。
+- 相同命令修后 exit 0（1/1、0 skip，约 1.422s）。20:00 的用户主动提交确实到达模型；失败后原文空白及草稿保留，模型恢复不自动重发，下一次主动点击才成功。开发主动退出仍清草稿。
+- 原 17 条浏览器用例和断言全部保留，另扩展原共享 Cookie 用例：另一标签通过真实 HTTPS 登录替换 Cookie、不广播通知，原页再次交互仍清旧私人视图/草稿且不提交旧草稿。该定向测试 exit 0（1/1、0 skip，约 1.718s）。
+- 两项均无公共契约、冻结测试集或生产配置变更；没有顺带重构其他业务。验证环境保持隔离 Chrome、临时认证/记忆目录、fixture SPKI 例外、测试密码和模型替身；未验证远端 CI 或实际公网部署。
+
+### Lead 独立补验与关闭结论
+
+修复代理在提交 `019b206` 并写入上述红绿记录后异常结束，未留下最终工具报告；Lead 保留其未提交审查记录，未将报告缺失等同于通过。Lead 检查了完整修复 diff、确认集成 tip 为祖先，并在同一固定代码提交的工作树实际运行并收集：
+
+```sh
+CHROME_NO_SANDBOX=1 CHROME_BIN=/bin/google-chrome flock /tmp/shiyi-web-auth-make-check.lock make check
+flock /tmp/shiyi-web-auth-image-check.lock make image-check IMAGE=shiyi:web-auth-review
+```
+
+两项均 exit 0。完整门禁包括 Go/race/冻结集、扩展后的原 17 条真实 HTTPS 浏览器（17 pass / 0 fail / 0 skip，包含开发 challenge 19:59/20:00 与真实密码身份轮换保护）、TTY/认证进程 smoke 和 270 项文档检查；镜像完整安全认证 smoke 通过，包括非 root/独立卷权限、重启/撤销/重哈希与秘密日志。
+
+**Standards：S1 已整改，未解决 0 条；Spec：P1 已整改并由真实浏览器回归验证，未解决 0 条。** 此结论为原发现的修复核对及 Lead 实测，不冒充重新进行一次全量独立审查。
