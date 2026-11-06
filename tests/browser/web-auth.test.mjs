@@ -166,6 +166,28 @@ test('same-Cookie tabs clear private DOM and draft when another tab logs out', a
   await first.ready();
   assert.equal(await first.evaluate(`document.querySelector('#input').value`), '');
   assert.equal((await h.control('stats')).calls, 1);
+
+  await first.send('Page.bringToFront'); await first.ready();
+  await first.submit('密码登录身份变化前的私人展示');
+  await first.wait(`document.querySelector('.msg-record')`);
+  await first.fill('#input', '不能继承到新登录的私人草稿');
+  // Rotate the real shared Cookie through HTTP without a BroadcastChannel notice.
+  // The first tab must detect the changed password session on its next interaction.
+  const rotation = await second.evaluate(`(async () => {
+    const session = await (await fetch('/auth/session', {credentials:'same-origin', cache:'no-store'})).json();
+    const response = await fetch('/auth/login', {
+      method:'POST', credentials:'same-origin', cache:'no-store',
+      headers:{'Content-Type':'application/json', 'X-CSRF-Token':session.csrf_token},
+      body:JSON.stringify({password:'browser-test-only-password'})
+    });
+    const current = await response.json();
+    return {status:response.status, authenticated:current.authenticated, rotated:current.csrf_token !== session.csrf_token};
+  })()`);
+  assert.deepEqual(rotation, { status: 200, authenticated: true, rotated: true });
+  await first.click('#send'); await first.ready();
+  assert.equal(await first.evaluate(`document.querySelector('#messages').textContent`), '');
+  assert.equal(await first.evaluate(`document.querySelector('#input').value`), '');
+  assert.equal((await h.control('stats')).calls, 2, 'a changed password session cannot inherit or replay the old draft');
 });
 
 test('actual back/forward cache restoration checks auth and never restores a private snapshot', async t => {
@@ -241,8 +263,29 @@ test('development anonymous mode is explicit and offers no password or logout-al
   assert.equal(await page.evaluate(`document.querySelector('#show-logout-all').hidden`), true);
   await page.submit('显式开发模式原文');
   await page.wait(`document.querySelector('.msg-record')`);
+  const draft = '  challenge 轮换后仍保留\n未成功提交的原文  ';
+  await h.control('model', { fail: true });
+  await h.control('advance', { seconds: 20 * 60 - 1 });
+  await page.submit(draft);
+  await page.wait(`document.querySelector('.msg-error')`);
+  await page.ready();
+  assert.equal(await page.evaluate(`document.querySelector('#input').value`), draft);
+  assert.equal((await h.control('stats')).calls, 2);
+  await h.control('advance', { seconds: 1 }); // Exactly the bootstrap expiry boundary.
+  await page.click('#send');
+  await page.ready();
+  assert.equal(await page.evaluate(`document.querySelector('#input').value`), draft, 'challenge rotation must not discard an unsubmitted draft');
+  assert.equal((await h.control('stats')).calls, 3, 'only the explicit click submits; model failure is not retried');
+  await h.control('model', { fail: false });
+  assert.equal((await h.control('stats')).calls, 3, 'model recovery must not replay the draft');
+  await page.click('#send');
+  await page.wait(`document.querySelectorAll('.msg-record').length === 2`);
+  assert.equal(await page.evaluate(`[...document.querySelectorAll('.msg-user .msg-text')].at(-1).textContent`), draft);
+  assert.equal((await h.control('stats')).calls, 4);
+  await page.fill('#input', '主动退出仍必须清除的开发草稿');
   await page.click('#logout'); await page.ready();
   assert.equal(await page.evaluate(`document.querySelector('#messages').textContent`), '');
+  assert.equal(await page.evaluate(`document.querySelector('#input').value`), '');
   assert.match(await page.evaluate(`document.querySelector('#auth-status').textContent`), /开发匿名模式/);
 });
 

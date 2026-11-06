@@ -119,9 +119,10 @@
       throw new Error('invalid session response');
     }
     var expired = !!identity && !body.authenticated;
-    // Same Cookie, same identity across tabs. A different token means a different
-    // login, never permission to inherit the previous private view or draft.
-    if (body.authenticated && identity && identity !== body.csrf_token) {
+    // Password-session tokens identify a login. Development-anonymous challenges
+    // can rotate without changing identity or discarding the current draft.
+    if (body.authenticated && identity && (mode !== body.mode ||
+        (body.mode === 'password' && identity !== body.csrf_token))) {
       generation++;
       authBusy = false;
       clearPrivate(false);
