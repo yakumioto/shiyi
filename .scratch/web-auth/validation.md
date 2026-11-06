@@ -1,6 +1,17 @@
-# Web 认证验收记录（05）
+# Web 认证验收记录（05 / 审查修复）
 
-## 最终补验结论（Lead，2026-11-06）
+## 审查修复后的补验（Lead，2026-11-06）
+
+实现提交 `019b2066fe49085c3b3859d5b49dfc9076c513b5` 已修复两轴发现：开发匿名 challenge 正常轮换保留草稿，认证私有 helper 保留两次加锁后复核。修复代理保留了真实浏览器先红后绿的记录；Lead 审阅精确代码 diff，并在固定修复代码的原工作树再次实际执行：
+
+```sh
+CHROME_NO_SANDBOX=1 CHROME_BIN=/bin/google-chrome flock /tmp/shiyi-web-auth-make-check.lock make check
+flock /tmp/shiyi-web-auth-image-check.lock make image-check IMAGE=shiyi:web-auth-review
+```
+
+两项均 exit 0。完整门禁为 ALL GREEN：原 17 条真实 HTTPS 用例全部保留并扩展开发 20 分钟边界/真正密码身份轮换断言，17/17、0 skip；全部 Go/race/冻结集、TTY/认证进程与 270 项文档检查通过。完整安全认证容器验收通过。细节见 [两轴审查与整改](<review.md>)；未解决审查发现为 Standards 0、Spec 0。以下保留 05 原始验收及后续补验历史，不代表修复后曾跳过任何门禁。
+
+## 05 最终补验结论（Lead，2026-11-06）
 
 **本地完整验收已通过。** Lead 在固定候验提交 `1f62f130df6d054167c0ec7946a3944e3b789c96` 的原工作树，按工具规则获准对下文 A/C 原命令作单次更宽权限重试；未改变设备权限、跳过测试或启用匿名模式。之后以 `f0226ca3518fcb2e1028a9e028cc85880d74563a` 合入 `feat/web-auth`，结果树与该候验提交完全相同，并在主树再次完整执行 A。
 

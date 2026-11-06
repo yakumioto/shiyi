@@ -310,17 +310,8 @@ func (m *module) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body := http.MaxBytesReader(w, r.Body, MaxAuthBodyBytes)
 	raw, err := io.ReadAll(body)
 	m.mu.Lock()
-	if m.closed || m.failed || !m.stateSafe() {
-		fail(w, api.CodeAuthUnavailable)
-		return
-	}
-	id, s, logged = m.session(r)
-	if r.URL.Path == api.PathAuthLogoutAll && !logged {
-		fail(w, api.CodeUnauthorized)
-		return
-	}
-	if !m.sourceOK(r, true) || !m.csrfOK(r, s, logged) {
-		fail(w, api.CodeForbidden)
+	id, logged, ok := m.revalidatePasswordRequestLocked(w, r)
+	if !ok {
 		return
 	}
 	if err != nil {
@@ -365,17 +356,8 @@ func (m *module) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.mu.Unlock()
 	passwordErr := bcrypt.CompareHashAndPassword([]byte(m.cfg.PasswordHash), []byte(input.Password))
 	m.mu.Lock()
-	if m.closed || m.failed || !m.stateSafe() {
-		fail(w, api.CodeAuthUnavailable)
-		return
-	}
-	id, s, logged = m.session(r)
-	if r.URL.Path == api.PathAuthLogoutAll && !logged {
-		fail(w, api.CodeUnauthorized)
-		return
-	}
-	if !m.sourceOK(r, true) || !m.csrfOK(r, s, logged) {
-		fail(w, api.CodeForbidden)
+	id, logged, ok = m.revalidatePasswordRequestLocked(w, r)
+	if !ok {
 		return
 	}
 	if passwordErr != nil {
@@ -406,6 +388,27 @@ func (m *module) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.cookie(w, BootstrapCookieName, "", time.Time{})
 	respond(w, 200, api.SessionResponse{Authenticated: true, Mode: api.AuthModePassword, CSRFToken: s.CSRF})
 }
+
+// revalidatePasswordRequestLocked checks authorization after password body IO or
+// bcrypt comparison. The caller must hold m.mu; neither unlocked interval may
+// allow a closed module, revoked session or expired CSRF challenge to proceed.
+func (m *module) revalidatePasswordRequestLocked(w http.ResponseWriter, r *http.Request) (id string, logged bool, ok bool) {
+	if m.closed || m.failed || !m.stateSafe() {
+		fail(w, api.CodeAuthUnavailable)
+		return "", false, false
+	}
+	id, s, logged := m.session(r)
+	if r.URL.Path == api.PathAuthLogoutAll && !logged {
+		fail(w, api.CodeUnauthorized)
+		return "", false, false
+	}
+	if !m.sourceOK(r, true) || !m.csrfOK(r, s, logged) {
+		fail(w, api.CodeForbidden)
+		return "", false, false
+	}
+	return id, logged, true
+}
+
 func (m *module) Protect(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
