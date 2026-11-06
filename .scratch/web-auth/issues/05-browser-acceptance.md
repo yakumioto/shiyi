@@ -1,7 +1,7 @@
 # 05: 真实 HTTPS 浏览器与端到端验收
 
 Status: ready-for-agent
-Execution: claimed
+Execution: completed
 Blocked by: 03, 04
 
 ## 范围
@@ -12,11 +12,15 @@ Blocked by: 03, 04
 
 ## 验收
 
-- [ ] 实际运行真实 HTTPS 浏览器流程并记录环境前提与结果。
-- [ ] HTTP/服务/容器/浏览器的验收覆盖矩阵完整，无未执行标绿。
-- [ ] `make check`、浏览器命令及 `make image-check` 最终执行并记录。
-- [ ] 合并最新集成 tip，无冻结接缝漂移。
+- [x] 实际运行真实 HTTPS 浏览器流程并记录环境前提与结果。
+- [x] HTTP/服务/容器/浏览器的验收覆盖矩阵完整，无未执行标绿。
+- [x] `make check`、浏览器命令及 `make image-check` 最终执行并记录。
+- [x] 合并最新集成 tip，无冻结接缝漂移。
 
 ## Comments
 
-待实施。
+已完成。实现提交 `9e85c52`，候验及证据提交 `1f62f13`，集成提交 `f0226ca`，分支 `feat/web-auth`。原 15 条真实 HTTPS 浏览器回归保留，新增同一临时 profile 真实关闭/重开 Chrome、同认证目录/哈希重构服务后保留登录两条，均验证不恢复私人历史或自动重放；17/17 通过、0 skip。`make browser-check` 已接入唯一 `make check` 与 CI，缺工具明确失败，文档检查 270 项通过。
+
+实施者初验的完整门禁因 PTY 沙箱权限失败，未虚报通过。Lead 对固定候验 HEAD 在原工作树获准原样补跑完整 `make check` 和 `make image-check IMAGE=shiyi:web-auth-05`，均 exit 0；合入后的主树再次运行完整 `make check`，ALL GREEN，包括浏览器、TTY、认证进程、Go/race/冻结集与文档。容器验收包含默认安全认证、非 root、独立状态卷权限、存活、重启/撤销/重哈希与秘密日志。
+
+完整测试名与 Testing Decisions 1–13 的证据见 [验收记录](<../validation.md>) 和 [验收追踪](<../acceptance-map.md>)。未推送，远端 CI 未运行；未操作或声称验证实际公网部署。没有应用实现、冻结接口或冻结 fixtures 改动。
