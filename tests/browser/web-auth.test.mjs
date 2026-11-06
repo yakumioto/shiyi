@@ -20,6 +20,63 @@ test('HTTPS login receives a protected Cookie and submits original text', async 
   assert.equal((await h.control('stats')).calls, 1);
 });
 
+test('closing and reopening Chrome preserves the valid Cookie but not private history', async t => {
+  const h = await setup(t);
+  // The default context is the isolated on-disk profile, not an incognito jar.
+  const page = await h.page();
+  await page.login(); await page.ready();
+  await privateConversation(h, page);
+  const before = (await h.cdp.send('Storage.getCookies')).cookies.find(cookie => cookie.name === '__Host-shiyi-session');
+  assert.ok(before && !before.session && before.expires > Date.now() / 1000, 'login issued a persistent Cookie');
+  const restart = await h.restartBrowser();
+  assert.equal(restart.exitCode, 0, 'the original Chrome process actually exited cleanly');
+  assert.notEqual(restart.pid, restart.previousPID, 'a new Chrome process owns the same temporary profile');
+  const reopened = await h.page();
+  await reopened.ready(); // No login or injected Cookie after relaunch.
+  const after = (await h.cdp.send('Storage.getCookies')).cookies.find(cookie => cookie.name === '__Host-shiyi-session');
+  assert.ok(after && after.value === before.value, 'Chrome retained the original login Cookie');
+  await assertFreshPrivateView(h, reopened);
+});
+
+test('service and auth reconstruction retain browser login without restoring private history', async t => {
+  const h = await setup(t);
+  const page = await h.page();
+  await page.login(); await page.ready();
+  await privateConversation(h, page);
+  await h.control('restart-service'); // HTTP closes before auth; same auth directory and hash.
+  await page.navigate(h.origin);
+  await page.ready(); // The existing browser Cookie must still authorize without relogin.
+  await assertFreshPrivateView(h, page);
+});
+
+// Exercise displayed original text, answer, citation and an unsubmitted draft.
+// Only public UI/model seams are used; never inspect auth or Chrome disk formats.
+async function privateConversation(h, page) {
+  await page.submit('重开验收私人原文');
+  await page.wait(`document.querySelector('.msg-record')`);
+  const time = await page.evaluate(`document.querySelector('.msg-record .msg-meta').textContent.replace('记录时间：', '')`);
+  await h.control('model', { kind: 'query', answers: [
+    { choices: [{ message: { role: 'assistant', content: '', tool_calls: [{ id: 'search', type: 'function', function: { name: 'search_memory', arguments: JSON.stringify({ keywords: ['重开验收'], limit: 5 }) } }] }, finish_reason: 'tool_calls' }] },
+    { choices: [{ message: { role: 'assistant', content: JSON.stringify({ answer: '重开前的私人回答', citations: [time] }) }, finish_reason: 'stop' }] }
+  ] });
+  await page.submit('重开验收里记录了什么？');
+  await page.wait(`document.querySelector('.citation')`);
+  assert.equal(await page.evaluate(`document.querySelector('.msg-answer').textContent`), '重开前的私人回答');
+  await page.fill('#input', '重开前未提交的私人草稿');
+}
+
+async function assertFreshPrivateView(h, page) {
+  assert.equal(await page.evaluate(`document.querySelectorAll('.msg-user, .msg-answer, .citation').length`), 0);
+  assert.doesNotMatch(await page.evaluate(`document.querySelector('#messages').textContent`), /重开验收|重开前/);
+  assert.equal(await page.evaluate(`document.querySelector('#input').value`), '');
+  assert.deepEqual(await page.evaluate(`({local:localStorage.length, session:sessionStorage.length, cookie:document.cookie})`), { local: 0, session: 0, cookie: '' });
+  assert.equal((await h.control('stats')).calls, 2, 'no private input was replayed');
+  await h.control('model', { kind: 'record' });
+  await page.submit('重开后主动记录的新原文');
+  await page.wait(`document.querySelector('.msg-record')`);
+  assert.equal((await h.control('stats')).calls, 3, 'the retained login authorizes a real memory POST');
+}
+
 test('expired login keeps only an in-memory draft and never replays it', async t => {
   const h = await setup(t);
   const page = await h.page(await h.context());

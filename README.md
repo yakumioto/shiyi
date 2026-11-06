@@ -286,7 +286,9 @@ JSONL 是唯一记忆真相源。认证状态是获准独立持久化的访问�
 
 ## 开发与门禁
 
-依赖 Go 1.26、ripgrep、Python 3、OpenSSL 和可分配 PTY 的环境。Go 依赖固定版本并提交 vendor，模型使用本地替身，不依赖真实密钥。
+依赖 Go 1.26、ripgrep、Python 3、OpenSSL、Node 24、Chrome/Chromium 和可分配 PTY 的环境。
+浏览器默认 `/bin/google-chrome`，其他路径用 `CHROME_BIN` 指定；缺工具或 Node 主版本不符会失败，不跳过验收。
+Go 依赖固定版本并提交 vendor，浏览器使用 Node 原生 CDP，无 npm 依赖；模型使用本地替身，不依赖真实密钥。
 构建容器还需 Docker 与基础镜像/系统软件包来源；测试不会修改实际部署。
 
 **`make check` 是唯一的本地门禁**，CI 执行同一目标；并行工作树期间按锁串行运行：
@@ -298,18 +300,29 @@ make image-check
 
 | check 步骤 | 内容 |
 | --- | --- |
-| prereqs | rg / python3 / openssl |
+| prereqs | rg / python3 / openssl / Node 24 / Chrome，缺失即失败 |
 | verify-vendor | go mod verify、go mod vendor、vendor 无漂移 |
 | vet | `go vet ./...` |
 | compile | `go build ./...` |
 | test | `go test ./... -race -count=1` |
 | test-frozen | 版本固定、不可就地修改的冻结测试集 |
+| browser-check | 真实 HTTPS + Chrome 的 17 条用例：Cookie 收发、浏览器关闭重开、服务/auth 重构、过期/退出/跨标签/BFCache/竞态/XSS |
 | smoke | 真实二进制、TTY、临时 HTTPS 代理、Cookie jar、模型替身，安全配置/登录/业务/重启/撤销 |
 | readme-check | 配置、文档、镜像、错误码和服务管理命令交叉检查 |
 
 `make image-check` 实际构建镜像并运行非 root、独立卷、默认安全拒绝/登录/重启/撤销冒烟，不用匿名模式救绿。
 冒烟动态分配端口、按真实 HTTP 就绪继续，不使用固定启动延时；所有容器与数据仅为临时测试资源。
-这些检查不等于真实浏览器验收，也不证明你的公网代理配置安全。
+浏览器验收使用正常密码模式、临时 HTTPS、隔离 profile 和仅匹配夹具公钥的 SPKI 证书例外，不全局忽略证书错误。
+`make browser-check` 可单独运行同一套用例。CI 安装 Node 24 和 Chrome stable，再以其 `CHROME_BIN` 跑完整 `make check`。
+受限测试环境禁止 Chrome sandbox 时，才显式选择下面的命令；`CHROME_NO_SANDBOX=1` **只用于隔离测试，不是生产配置**：
+
+```bash
+CHROME_NO_SANDBOX=1 CHROME_BIN=/bin/google-chrome make browser-check
+CHROME_NO_SANDBOX=1 CHROME_BIN=/bin/google-chrome flock /tmp/shiyi-web-auth-make-check.lock make check
+```
+
+PTY 权限被拒绝时真实终端 smoke 必须失败，不能改设备权限或 skip。浏览器细节与直接 Node 入口见[浏览器验收说明](<tests/browser/README.md>)。
+自动化通过也不证明你的公网代理配置安全；未推送、未运行的远端 CI 不能称为已通过。
 
 其他目标：`make build`、`make run`、`make test`、`make vet`、`make test-frozen`、`make smoke`、`make readme-check`、`make image`、`make fmt`、`make clean`。
 单独子目标只用于定位，不替代完整门禁。[冒烟脚本](<scripts/smoke.sh>)和[文档检查](<docs/check-readme.sh>)可直接运行；
