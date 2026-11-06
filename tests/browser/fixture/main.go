@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -71,44 +72,69 @@ func run() error {
 	if !filepath.IsAbs(root) {
 		return fmt.Errorf("SHIYI_BROWSER_TEST_DIR must be an isolated absolute directory")
 	}
-	memory, err := store.New(filepath.Join(root, "memory"), "monthly")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
 	}
-	tls := httptest.NewUnstartedServer(nil)
-	defer tls.Close()
-	origin := "https://" + tls.Listener.Addr().String()
+	defer listener.Close()
+	address := listener.Addr().String()
+	origin := "https://" + address
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), 10)
 	if err != nil {
 		return err
 	}
 	var clock atomic.Int64
 	clock.Store(time.Now().UnixNano())
-	a, err := auth.New(config.AuthConfig{
+	authConfig := config.AuthConfig{
 		PasswordHash: string(hash), StateDir: filepath.Join(root, "auth"), PublicOrigin: origin,
 		DevAnonymous: os.Getenv("SHIYI_BROWSER_DEV_ANONYMOUS") == "1",
-	}, auth.Options{Now: func() time.Time { return time.Unix(0, clock.Load()) }})
-	if err != nil {
-		return err
 	}
-	defer a.Close()
 	m := &model{kind: "record"}
 	cfg := config.Config{
 		DataDir:    filepath.Join(root, "memory"),
 		Classifier: config.ModelConfig{BaseURL: "http://model.invalid", Model: "test"},
 		Answer:     config.ModelConfig{BaseURL: "http://model.invalid", Model: "test"},
 	}
-	srv, err := httpapi.New(httpapi.Deps{
-		Config: cfg, Auth: a, Judge: classify.New(m, "judge", 0), Store: memory,
-		Answerer: answer.New(m, search.New(cfg.DataDir), "answer", 0, answer.Budget{}),
-		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
-	if err != nil {
+	var a auth.Module
+	var srv *httpapi.Server
+	var tls *httptest.Server
+	startService := func(listener net.Listener) error {
+		memory, err := store.New(cfg.DataDir, "monthly")
+		if err != nil {
+			return err
+		}
+		a, err = auth.New(authConfig, auth.Options{Now: func() time.Time { return time.Unix(0, clock.Load()) }})
+		if err != nil {
+			return err
+		}
+		srv, err = httpapi.New(httpapi.Deps{
+			Config: cfg, Auth: a, Judge: classify.New(m, "judge", 0), Store: memory,
+			Answerer: answer.New(m, search.New(cfg.DataDir), "answer", 0, answer.Budget{}),
+			Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		})
+		if err != nil {
+			a.Close()
+			return err
+		}
+		tls = httptest.NewUnstartedServer(srv.HandlerWithWeb(web.Handler()))
+		tls.Listener.Close()
+		tls.Listener = listener
+		tls.StartTLS()
+		return nil
+	}
+	stopService := func() error {
+		if tls != nil {
+			tls.Close() // stop HTTP before releasing auth's single-writer lock
+		}
+		if srv != nil {
+			return srv.Close()
+		}
+		return nil
+	}
+	if err := startService(listener); err != nil {
 		return err
 	}
-	tls.Config.Handler = srv.HandlerWithWeb(web.Handler())
-	tls.StartTLS()
-	defer tls.Close() // stop HTTP before releasing auth's single-writer lock
+	defer func() { _ = stopService() }()
 	spki := sha256.Sum256(tls.Certificate().RawSubjectPublicKeyInfo)
 	out := json.NewEncoder(os.Stdout)
 	if err := out.Encode(map[string]any{"origin": origin, "spki": base64.StdEncoding.EncodeToString(spki[:])}); err != nil {
@@ -138,6 +164,20 @@ func run() error {
 			m.fail = cmd.Fail
 			m.answers = cmd.Answers
 			m.mu.Unlock()
+		case "restart-service":
+			if err := stopService(); err != nil {
+				return err
+			}
+			listener, err := net.Listen("tcp", address)
+			if err != nil {
+				return err
+			}
+			// Reconstruct from the same directories/hash via public constructors.
+			// Never copy, decode or manufacture persisted authentication state.
+			if err := startService(listener); err != nil {
+				listener.Close()
+				return err
+			}
 		case "close-auth":
 			if err := a.Close(); err != nil {
 				return err

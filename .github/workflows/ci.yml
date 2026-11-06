@@ -13,12 +13,25 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install Chrome for real HTTPS browser acceptance
+        id: chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: stable
+          install-dependencies: true
       - name: Install search and authenticated smoke prerequisites
         run: |
           sudo apt-get update
           sudo apt-get install -y ripgrep python3 openssl
-      # The exact local gate, including real process authentication and docs.
+      # The exact local gate, including browser-check, real process auth and docs.
       - name: Check
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+          # Only the isolated test Chrome; never a production application setting.
+          CHROME_NO_SANDBOX: "1"
         run: flock /tmp/shiyi-web-auth-make-check.lock make check
 
   container:

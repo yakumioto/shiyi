@@ -483,6 +483,26 @@ assert_contains .github/workflows/ci.yml 'make check' "CI运行完整本地门�
 assert_contains .github/workflows/ci.yml 'make image-check' "CI运行真实安全容器门禁"
 assert_contains docs/deployment.md '回滚旧认证状态' "部署说明禁止用旧快照恢复撤销资格"
 
+# -------------------------------------------- 10. 真实浏览器入口一致性
+section "10. 真实 HTTPS 浏览器门禁（只检查接入，不替代浏览器执行）"
+for file in tests/browser/README.md tests/browser/web-auth.test.mjs scripts/browser-prereqs.sh; do
+    assert_file "$file"
+done
+assert_matches Makefile '^check:.*browser-check' "唯一make check包含浏览器验收"
+assert_matches Makefile '^browser-check:.*browser-prereqs' "浏览器子目标不能跳过工具前置检查"
+assert_matches Makefile '^prereqs:.*browser-prereqs' "完整门禁提前检查浏览器前提"
+assert_contains Makefile 'node --test tests/browser/web-auth.test.mjs' "浏览器入口复用同一套真实测试"
+assert_contains .github/workflows/ci.yml 'actions/setup-node@' "CI安装Node"
+assert_contains .github/workflows/ci.yml 'node-version: "24"' "CI提供Node24"
+assert_contains .github/workflows/ci.yml 'browser-actions/setup-chrome@' "CI安装真实Chrome"
+assert_contains .github/workflows/ci.yml 'steps.chrome.outputs.chrome-path' "CI传入已安装的浏览器路径"
+for doc in "$README" docs/deployment.md tests/browser/README.md; do
+    for text in 'make browser-check' 'make check' 'Node 24' 'CHROME_BIN' 'CHROME_NO_SANDBOX' 'SPKI'; do
+        assert_contains "$doc" "$text" "$doc 说明浏览器验收前提 $text"
+    done
+done
+assert_absent tests/browser/README.md '本目录没有改 Makefile/CI' "浏览器说明不再声称尚未接入门禁"
+
 # ------------------------------------------------------------------ 汇总
 
 printf '\n----------------------------------------\n'
